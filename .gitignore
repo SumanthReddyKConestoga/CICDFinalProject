@@ -1,0 +1,25 @@
+@"
+# general
+.DS_Store
+
+# build artifacts
+dist/
+evidence/
+*.zip
+
+# allow .gitkeep inside the ignored dirs
+!dist/.gitkeep
+!evidence/.gitkeep
+
+# node
+node_modules/
+npm-debug.log*
+coverage/
+
+# env & venv
+.env
+.venv/
+
+# docker
+*.pid
+"@ | Set-Content -Encoding utf8 .gitignore
