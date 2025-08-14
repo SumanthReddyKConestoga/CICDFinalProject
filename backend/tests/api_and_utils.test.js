@@ -1,32 +1,36 @@
 import request from "supertest";
-import app, { sum, isPositive } from "../src/index.js";
+import app, { calculateAge, computeBmi } from "../src/index.js";
 
-describe("API /api/health", () => {
-  test("returns 200", async () => {
-    const res = await request(app).get("/api/health");
-    expect(res.statusCode).toBe(200);
-  });
+process.env.NODE_ENV = "test";
 
-  test("returns status and time", async () => {
-    const res = await request(app).get("/api/health");
-    expect(res.body).toHaveProperty("status", "ok");
-    expect(res.body).toHaveProperty("time");
-  });
+test("GET /api/health returns ok", async () => {
+  const res = await request(app).get("/api/health");
+  expect(res.status).toBe(200);
+  expect(res.body.status).toBe("ok");
+  expect(res.body.time).toBeDefined();
 });
 
-describe("API /api/echo/:msg", () => {
-  test("echoes path param", async () => {
-    const res = await request(app).get("/api/echo/hello");
-    expect(res.body).toEqual({ echo: "hello" });
-  });
+test("POST /api/calc returns age + bmi fields", async () => {
+  const payload = { name: "Sumanth", dob: "2001-03-06", heightCm: 175, weightKg: 72 };
+  const res = await request(app).post("/api/calc").send(payload);
+  expect(res.status).toBe(200);
+  expect(res.body.name).toBe("Sumanth");
+  expect(res.body.dob).toBe("2001-03-06");
+  expect(res.body).toHaveProperty("years");
+  expect(res.body).toHaveProperty("months");
+  expect(res.body).toHaveProperty("days");
+  expect(res.body).toHaveProperty("bmi");
+  expect(res.body).toHaveProperty("bmiCategory");
 });
 
-describe("utils", () => {
-  test("sum adds numbers", () => {
-    expect(sum(2, 3)).toBe(5);
-  });
-  test("isPositive detects positives", () => {
-    expect(isPositive(7)).toBe(true);
-    expect(isPositive(-1)).toBe(false);
-  });
+test("utils compute without HTTP", () => {
+  const a = calculateAge("1998-02-01", new Date("2025-02-10T00:00:00Z"));
+  expect(a.years).toBe(27);
+  expect(a.months).toBe(0);
+  expect(a.days).toBe(9);
+
+  const { bmi, category } = computeBmi(85, 158);
+  // Your BMI function returns ~34.05 for 85kg/158cm; assert accordingly
+  expect(bmi).toBeCloseTo(34.05, 2);
+  expect(category).toBe("Obese");
 });
