@@ -9,3 +9,44 @@ variable "aws_region" {
   type        = string
   default     = "us-east-1"
 }
+
+variable "aws_account_id" {
+  description = "AWS account for ECR registry"
+  type        = string
+}
+
+variable "backend_repo" {
+  description = "ECR repo name for backend"
+  type        = string
+  default     = "cicd-final-backend"
+}
+
+variable "image_tag" {
+  description = "Image tag to deploy"
+  type        = string
+  default     = "latest"
+}
+
+variable "db_password" {
+  description = "DB password for MySQL sidecar"
+  type        = string
+  sensitive   = true
+}
+
+locals {
+  registry = "${var.aws_account_id}.dkr.ecr.${var.aws_region}.amazonaws.com"
+  name     = var.project_name
+}
+
+# --- ECS/Service knobs ---
+variable "container_port" {
+  description = "Backend container port"
+  type        = number
+  default     = 3000
+}
+
+variable "desired_count" {
+  description = "Number of ECS tasks"
+  type        = number
+  default     = 1
+}
