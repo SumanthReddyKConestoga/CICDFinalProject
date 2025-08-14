@@ -1,5 +1,8 @@
 export default {
   testEnvironment: "node",
-  collectCoverageFrom: ["src/**/*.js"],
-  coverageReporters: ["text", "lcov"]
+  transform: {},
+  collectCoverage: true,
+  coverageDirectory: "coverage",
+  coverageReporters: ["text", "lcov"],
+  roots: ["<rootDir>/tests"],
 };
