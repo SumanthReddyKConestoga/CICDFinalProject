@@ -1,5 +1,4 @@
 name: deploy
-
 on:
   push:
     branches: ["main"]
@@ -13,28 +12,25 @@ env:
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
   TF_STATE_TABLE:  ${{ secrets.TF_STATE_TABLE }}
-  IMAGE_TAG: ${{ github.sha }}
+  # Use the tag that is guaranteed to exist from the image build workflow
+  IMAGE_TAG: latest
   ECR_BACKEND: cicd-final-backend
   ECR_FRONTEND: cicd-final-frontend
 
 jobs:
   terraform-apply:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-
+    permissions: { contents: read, id-token: write }
     steps:
       - uses: actions/checkout@v4
 
-      # ✅ Learner Lab requires the SESSION TOKEN as well
-      - name: Configure AWS credentials
+      - name: Configure AWS (OIDC or static)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN || '' }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
 
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
