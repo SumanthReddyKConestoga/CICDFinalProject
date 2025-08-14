@@ -50,3 +50,24 @@ variable "desired_count" {
   type        = number
   default     = 1
 }
+
+# --- EC2 deploy knobs ---
+variable "instance_type" {
+  type    = string
+  default = "t3.micro"
+}
+
+variable "repo_url" {
+  type    = string
+  default = "https://github.com/SumanthReddyKConestoga/CICDFinalProject.git"
+}
+
+variable "branch" {
+  type    = string
+  default = "main"
+}
+
+variable "cw_log_group_ec2" {
+  type    = string
+  default = "/cicd-final/ec2"
+}
