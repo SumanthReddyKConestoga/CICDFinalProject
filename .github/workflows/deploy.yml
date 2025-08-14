@@ -1,4 +1,5 @@
 name: deploy
+
 on:
   push:
     branches: ["main"]
@@ -19,15 +20,21 @@ env:
 jobs:
   terraform-apply:
     runs-on: ubuntu-latest
-    permissions: { contents: read, id-token: write }
+    permissions:
+      contents: read
+      id-token: write
+
     steps:
       - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+
+      # ✅ Learner Lab requires the SESSION TOKEN as well
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN || '' }}
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
 
       - name: Install Terraform
         uses: hashicorp/setup-terraform@v3
@@ -39,7 +46,11 @@ jobs:
           TF_BUCKET: ${{ env.TF_STATE_BUCKET }}
           TF_TABLE:  ${{ env.TF_STATE_TABLE }}
         run: |
-          terraform init -backend-config="bucket=$TF_BUCKET" -backend-config="key=cicd-final/terraform.tfstate" -backend-config="region=$AWS_REGION" -backend-config="dynamodb_table=$TF_TABLE"
+          terraform init \
+            -backend-config="bucket=$TF_BUCKET" \
+            -backend-config="key=cicd-final/terraform.tfstate" \
+            -backend-config="region=$AWS_REGION" \
+            -backend-config="dynamodb_table=$TF_TABLE"
 
       - name: Terraform apply
         working-directory: infra/terraform
