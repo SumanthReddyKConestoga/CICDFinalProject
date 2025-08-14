@@ -1,0 +1,65 @@
+name: deploy-ec2
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/deploy-ec2.yml"
+  workflow_dispatch:
+
+env:
+  AWS_REGION:       ${{ secrets.AWS_REGION }}
+
+jobs:
+  apply-and-restart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Learner Lab temporary creds (requires session token)
+      - name: Configure AWS (Learner Lab)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region:            ${{ env.AWS_REGION }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      # Quick apply (state-less for demo). If you already have S3/DDB backend, swap to backend config.
+      - name: Terraform init/apply (no remote backend)
+        working-directory: infra/terraform
+        env:
+          TF_VAR_aws_region:   ${{ secrets.AWS_REGION }}
+          TF_VAR_project_name: cicd-final
+          TF_VAR_db_password:  ${{ secrets.DB_PASSWORD }}
+        run: |
+          terraform init -backend=false
+          terraform apply -auto-approve
+
+      # Find the EC2 instance by tag and restart the app (git pull + compose up)
+      - name: Get instance-id
+        id: find
+        run: |
+          IID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Project,Values=cicd-final" "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" --output text)
+          echo "iid=$IID" >> $GITHUB_OUTPUT
+
+      - name: Deploy via SSM (git pull + docker compose up)
+        run: |
+          aws ssm send-command \
+            --instance-ids "${{ steps.find.outputs.iid }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "CI deploy" \
+            --parameters commands='[
+              "set -eux",
+              "cd /opt/app/app",
+              "sudo git fetch --all",
+              "sudo git reset --hard origin/main",
+              "sudo /usr/local/bin/docker-compose -f docker-compose.yml -f docker-compose.override.yml up -d --build"
+            ]' \
+            --output text
