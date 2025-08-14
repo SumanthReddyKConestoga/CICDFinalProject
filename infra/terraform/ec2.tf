@@ -1,12 +1,23 @@
 ########################################
-# Networking (use Default VPC)
+# Networking (use Default VPC) – v5-safe
 ########################################
-data "aws_default_vpc" "this" {}
 
+# Default VPC (provider v5+)
+data "aws_vpc" "default" {
+  default = true
+}
+
+# Default subnets inside that VPC (one per AZ)
 data "aws_subnets" "default_vpc_subnets" {
   filter {
     name   = "vpc-id"
-    values = [data.aws_default_vpc.this.id]
+    values = [data.aws_vpc.default.id]
+  }
+
+  # Optional but helps select the default-for-az subnets
+  filter {
+    name   = "default-for-az"
+    values = ["true"]
   }
 }
 
@@ -23,12 +34,13 @@ resource "aws_cloudwatch_log_group" "ec2" {
 ########################################
 resource "aws_iam_role" "ec2" {
   name = "${local.name}-ec2-role"
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
     Statement = [{
-      Effect = "Allow",
+      Effect    = "Allow",
       Principal = { Service = "ec2.amazonaws.com" },
-      Action = "sts:AssumeRole"
+      Action    = "sts:AssumeRole"
     }]
   })
 }
@@ -54,7 +66,7 @@ resource "aws_iam_instance_profile" "ec2" {
 resource "aws_security_group" "web" {
   name        = "${local.name}-web-sg"
   description = "Allow HTTP"
-  vpc_id      = data.aws_default_vpc.this.id
+  vpc_id      = data.aws_vpc.default.id
 
   ingress {
     description = "HTTP"
@@ -93,11 +105,11 @@ locals {
 }
 
 resource "aws_instance" "web" {
-  ami                         = data.aws_ami.al2023.id
-  instance_type               = var.instance_type
-  subnet_id                   = data.aws_subnets.default_vpc_subnets.ids[0]
-  vpc_security_group_ids      = [aws_security_group.web.id]
-  iam_instance_profile        = aws_iam_instance_profile.ec2.name
+  ami                    = data.aws_ami.al2023.id
+  instance_type          = var.instance_type
+  subnet_id              = data.aws_subnets.default_vpc_subnets.ids[0]
+  vpc_security_group_ids = [aws_security_group.web.id]
+  iam_instance_profile   = aws_iam_instance_profile.ec2.name
 
   tags = {
     Name    = "${local.name}-ec2"
@@ -160,7 +172,6 @@ resource "aws_instance" "web" {
     EOF
 
     # Publish on port 80 (optional reverse proxy if your compose exposes 8081/3000)
-    # Simple iptables DNAT for demo: map 80 -> 8081 (frontend)
     # If your frontend already binds 80, you can skip this.
     if ! ss -tulpen | grep -q ':80 '; then
       dnf install -y iptables-services
@@ -174,7 +185,10 @@ resource "aws_instance" "web" {
   BASH
 }
 
-output "ec2_instance_id"      { value = aws_instance.web.id }
-output "ec2_public_ip"        { value = aws_instance.web.public_ip }
-output "ec2_public_dns"       { value = aws_instance.web.public_dns }
-output "ec2_log_group"        { value = aws_cloudwatch_log_group.ec2.name }
+########################################
+# Outputs
+########################################
+output "ec2_instance_id" { value = aws_instance.web.id }
+output "ec2_public_ip" { value = aws_instance.web.public_ip }
+output "ec2_public_dns" { value = aws_instance.web.public_dns }
+output "ec2_log_group" { value = aws_cloudwatch_log_group.ec2.name }
