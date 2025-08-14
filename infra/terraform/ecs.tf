@@ -10,8 +10,8 @@ data "aws_availability_zones" "available" {
 
 # Manage the region’s default subnets in the first two AZs
 resource "aws_default_subnet" "default" {
-  for_each           = toset(slice(data.aws_availability_zones.available.names, 0, 2))
-  availability_zone  = each.value
+  for_each          = toset(slice(data.aws_availability_zones.available.names, 0, 2))
+  availability_zone = each.value
 }
 
 ########################################
@@ -143,8 +143,8 @@ resource "aws_ecs_task_definition" "api" {
       image        = local.image_url
       essential    = true
       portMappings = [{ containerPort = var.container_port, protocol = "tcp" }]
-      environment  = [
-        { name = "PORT",        value = tostring(var.container_port) },
+      environment = [
+        { name = "PORT", value = tostring(var.container_port) },
         # DB is optional for demo; app still serves /api/health if DB is unreachable.
         { name = "DB_PASSWORD", value = var.db_password }
       ]
@@ -168,8 +168,8 @@ resource "aws_ecs_service" "api" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets         = [for s in values(aws_default_subnet.default) : s.id]
-    security_groups = [aws_security_group.task.id]
+    subnets          = [for s in values(aws_default_subnet.default) : s.id]
+    security_groups  = [aws_security_group.task.id]
     assign_public_ip = true
   }
 
