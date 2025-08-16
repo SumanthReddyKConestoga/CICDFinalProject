@@ -1,3 +1,37 @@
+      - name: Install dependencies (Frontend)
+        run: |
+          cd frontend
+          npm ci || true
+      - name: Run frontend tests
+        run: |
+          cd frontend
+          npm test || true
+      - name: Run frontend coverage
+        run: |
+          cd frontend
+          npm run test:coverage || true
+      - name: Upload frontend coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+      - name: Install dependencies (Backend)
+        run: |
+          cd backend
+          npm ci
+      - name: Run backend tests
+        run: |
+          cd backend
+          npm test
+      - name: Run backend coverage
+        run: |
+          cd backend
+          npm run test:coverage
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: backend-coverage
+          path: backend/coverage/
 name: CI/CD Pipeline
 
 on:
@@ -14,16 +48,22 @@ jobs:
       - name: Install Trivy
         run: |
           sudo apt-get install wget -y
-          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.0_Linux-64bit.deb
-          sudo dpkg -i trivy_0.50.0_Linux-64bit.deb
+            wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.51.1_Linux-64bit.deb
+            sudo dpkg -i trivy_0.51.1_Linux-64bit.deb
       - name: Docker Build (Backend)
         run: docker build -t backend:latest ./backend
       - name: Docker Build (Frontend)
         run: docker build -t frontend:latest ./frontend
       - name: Trivy Scan Backend
         run: trivy image backend:latest
+        - name: Create ECR repository for backend if not exists
+          run: |
+            aws ecr describe-repositories --repository-names cicd-final-backend || aws ecr create-repository --repository-name cicd-final-backend
       - name: Trivy Scan Frontend
         run: trivy image frontend:latest
+        - name: Create ECR repository for frontend if not exists
+          run: |
+            aws ecr describe-repositories --repository-names cicd-final-frontend || aws ecr create-repository --repository-name cicd-final-frontend
 
   build-test:
     runs-on: ubuntu-latest
