@@ -1,114 +1,131 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline (Frontend+Backend → Docker Hub → Terraform/EC2)
 
 on:
-  push:
-    branches: [main]
-  pull_request:
 
-    jobs:
-      test-backend:
-        runs-on: ubuntu-latest
-        steps:
-          - uses: actions/checkout@v4
-          - name: Set up Node.js
-            uses: actions/setup-node@v4
-            with:
-              node-version: '18'
-          - name: Install dependencies
-            run: |
-              cd backend
-              npm ci
-          - name: Run backend tests
-            run: |
-              cd backend
-              npm test
-          - name: Run backend coverage
-            run: |
-              cd backend
-              npm run test:coverage
-          - name: Upload backend coverage report
-            uses: actions/upload-artifact@v4
-            with:
-              name: backend-coverage
-              path: backend/coverage/
+  jobs:
+    test-backend:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - name: Set up Node.js
+          uses: actions/setup-node@v4
+          with:
+            node-version: '18'
+        - name: Install dependencies
+          run: |
+            cd backend
+            npm ci
+        - name: Run backend tests
+          run: |
+            cd backend
+            npm test
+        - name: Run backend coverage
+          run: |
+            cd backend
+            npm run test:coverage
+        - name: Upload backend coverage report
+          uses: actions/upload-artifact@v4
+          with:
+            name: backend-coverage
+            path: backend/coverage/
 
-      push-backend:
-        runs-on: ubuntu-latest
-        needs: test-backend
-        steps:
-          - uses: actions/checkout@v4
-          - name: Configure AWS credentials
-            uses: aws-actions/configure-aws-credentials@v4
-            with:
-              aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-              aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-              aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
-          - name: Login to Amazon ECR
-            id: login-ecr
-            uses: aws-actions/amazon-ecr-login@v2
-          - name: Create ECR repository for backend if not exists
-            run: |
-              aws ecr describe-repositories --repository-names cicd-final-backend || aws ecr create-repository --repository-name cicd-final-backend
-          - name: Build and push backend Docker image
-            run: |
-              BACKEND_REPO=${{ secrets.ECR_REPO_URL }}-backend
-              docker build -t $BACKEND_REPO:latest ./backend
-              docker push $BACKEND_REPO:latest
+    push-backend:
+      runs-on: ubuntu-latest
+      needs: test-backend
+      steps:
+        - uses: actions/checkout@v4
+        - name: Configure AWS credentials
+          uses: aws-actions/configure-aws-credentials@v4
+          with:
+            aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+            aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+        - name: Login to Amazon ECR
+          id: login-ecr
+          uses: aws-actions/amazon-ecr-login@v2
+        - name: Create ECR repository for backend if not exists
+          run: |
+            aws ecr describe-repositories --repository-names cicd-final-backend || aws ecr create-repository --repository-name cicd-final-backend
+        - name: Build and push backend Docker image
+          run: |
+            BACKEND_REPO=${{ secrets.ECR_REPO_URL }}-backend
+            docker build -t $BACKEND_REPO:latest ./backend
+            docker push $BACKEND_REPO:latest
 
-      push-frontend:
-        runs-on: ubuntu-latest
-        needs: test-backend
-        steps:
-          - uses: actions/checkout@v4
-          - name: Configure AWS credentials
-            uses: aws-actions/configure-aws-credentials@v4
-            with:
-              aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-              aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-              aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
-          - name: Login to Amazon ECR
-            id: login-ecr
-            uses: aws-actions/amazon-ecr-login@v2
-          - name: Create ECR repository for frontend if not exists
-            run: |
-              aws ecr describe-repositories --repository-names cicd-final-frontend || aws ecr create-repository --repository-name cicd-final-frontend
-          - name: Build and push frontend Docker image
-            run: |
-              FRONTEND_REPO=${{ secrets.ECR_REPO_URL }}-frontend
-              docker build -t $FRONTEND_REPO:latest ./frontend
-              docker push $FRONTEND_REPO:latest
+    push-frontend:
+      runs-on: ubuntu-latest
+      needs: test-backend
+      steps:
+        - uses: actions/checkout@v4
+        - name: Configure AWS credentials
+          uses: aws-actions/configure-aws-credentials@v4
+          with:
+            aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+            aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+        - name: Login to Amazon ECR
+          id: login-ecr
+          uses: aws-actions/amazon-ecr-login@v2
+        - name: Create ECR repository for frontend if not exists
+          run: |
+            aws ecr describe-repositories --repository-names cicd-final-frontend || aws ecr create-repository --repository-name cicd-final-frontend
+        - name: Build and push frontend Docker image
+          run: |
+            FRONTEND_REPO=${{ secrets.ECR_REPO_URL }}-frontend
+            docker build -t $FRONTEND_REPO:latest ./frontend
+            docker push $FRONTEND_REPO:latest
 
-      terraform-validate:
-        runs-on: ubuntu-latest
-        needs: [push-backend, push-frontend]
-        steps:
-          - uses: actions/checkout@v4
-          - name: Setup Terraform
-            uses: hashicorp/setup-terraform@v3
-          - name: Terraform Format
-            run: terraform fmt -check -recursive
-          - name: Terraform Validate
-            run: terraform validate
-          - name: Terraform Plan
-            run: |
-              cd infra/terraform
-              terraform init
-              terraform plan
+    terraform-validate:
+      runs-on: ubuntu-latest
+      needs: [push-backend, push-frontend]
+      steps:
+        - uses: actions/checkout@v4
+        - name: Setup Terraform
+          uses: hashicorp/setup-terraform@v3
+        - name: Terraform Format
+          run: terraform fmt -check -recursive
+        - name: Terraform Validate
+          run: terraform validate
+        - name: Terraform Plan
+          run: |
+            cd infra/terraform
+            terraform init
+            terraform plan
 
-      deploy-ec2:
-        runs-on: ubuntu-latest
-        needs: terraform-validate
-        steps:
-          - uses: actions/checkout@v4
-          - name: Setup Terraform
-            uses: hashicorp/setup-terraform@v3
-          - name: Terraform Apply
-            run: |
-              cd infra/terraform
-              terraform init
-              terraform apply -auto-approve
-            env:
-              AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-              AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-              AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+    deploy-ec2:
+      runs-on: ubuntu-latest
+      needs: terraform-validate
+      steps:
+        - uses: actions/checkout@v4
+        - name: Setup Terraform
+          uses: hashicorp/setup-terraform@v3
+        - name: Terraform Apply
+          run: |
+            cd infra/terraform
+            terraform init
+            terraform apply -auto-approve
+          env:
+            AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+            AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Configure AWS creds
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_DEFAULT_REGION }}
+      - name: Terraform init
+        run: terraform init
+      - name: Terraform apply
+        env:
+          TF_VAR_frontend_image: ${{ env.FRONTEND_IMAGE }}
+          TF_VAR_backend_image:  ${{ env.BACKEND_IMAGE }}
+          TF_VAR_instance_name:  cicd-final
+        run: terraform apply -auto-approve
+      - name: Show outputs
+        run: terraform output -json | jq
