@@ -115,6 +115,15 @@ jobs:
           for vpc in $VPCS; do
             aws ec2 delete-vpc --vpc-id $vpc || true
           done
+          # Remove duplicate ELBv2 Load Balancer and Target Group
+          LB_ARN=$(aws elbv2 describe-load-balancers --query "LoadBalancers[?LoadBalancerName=='ec2-app-alb'].LoadBalancerArn" --output text)
+          if [ ! -z "$LB_ARN" ]; then
+            aws elbv2 delete-load-balancer --load-balancer-arn $LB_ARN || true
+          fi
+          TG_ARN=$(aws elbv2 describe-target-groups --query "TargetGroups[?TargetGroupName=='ec2-app-tg'].TargetGroupArn" --output text)
+          if [ ! -z "$TG_ARN" ]; then
+            aws elbv2 delete-target-group --target-group-arn $TG_ARN || true
+          fi
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
