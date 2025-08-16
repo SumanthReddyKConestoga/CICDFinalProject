@@ -98,8 +98,8 @@ variable "app_port" {
 
 variable "key_pair_name" {
   type        = string
-  description = "Existing EC2 key pair name."
-  default     = "FINALCICD"
+  description = "Existing EC2 key pair name (e.g., FINALCICD). Leave empty to launch without SSH key."
+  default     = ""
 }
 
 variable "public_key_path" {

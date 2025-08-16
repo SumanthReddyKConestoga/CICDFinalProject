@@ -1,47 +1,28 @@
-# infra/terraform/modules/ec2/variables.tf
-#############################################
-# Inputs for EC2 module
-#############################################
-
-variable "ami_id" {
-  type        = string
-  description = "AMI ID for the instance."
-}
-
-variable "subnet_id" {
-  type        = string
-  description = "Subnet where the instance will be placed."
-}
-
-variable "app_sg_id" {
-  type        = string
-  description = "Security Group ID to attach to the instance."
-}
+variable "ami_id"  { type = string }
+variable "subnet_id"  { type = string }
+variable "app_sg_id"  { type = string }
 
 variable "instance_type" {
-  type        = string
-  description = "EC2 instance type."
-  default     = "t3.micro"
+  type    = string
+  default = "t3.micro"
 }
 
 variable "assign_public_ip" {
-  type        = bool
-  description = "Whether to associate a public IP."
-  default     = true
+  type    = bool
+  default = true
 }
 
 variable "iam_instance_profile_name" {
-  type        = string
-  description = "Name of the IAM instance profile to attach."
+  type = string
 }
 
 variable "key_name" {
   type        = string
-  description = "Existing EC2 key pair name (e.g., FINALCICD)."
+  description = "Existing EC2 key pair name; leave empty to skip attaching a key."
+  default     = ""
 }
 
 variable "user_data" {
-  type        = string
-  description = "User data script content."
-  default     = ""
+  type    = string
+  default = ""
 }
