@@ -1,4 +1,4 @@
-name: CI/CD Pipeline (Frontend+Backend → Docker Hub → Terraform/EC2)
+name: CI/CD Pipeline (Backend & Frontend → ECR → Terraform/EC2)
 
 on:
   push:
@@ -45,14 +45,10 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-      - name: Create ECR repository for backend if not exists
-        run: |
-          aws ecr describe-repositories --repository-names cicd-final-backend || aws ecr create-repository --repository-name cicd-final-backend
       - name: Build and push backend Docker image
         run: |
-          BACKEND_REPO=${{ secrets.ECR_REPO_URL }}/backend
-          docker build -t $BACKEND_REPO:latest ./backend
-          docker push $BACKEND_REPO:latest
+          docker build -t ${{ secrets.ECR_REPO_URL }}:latest ./backend
+          docker push ${{ secrets.ECR_REPO_URL }}:latest
 
   push-frontend:
     runs-on: ubuntu-latest
@@ -68,14 +64,10 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-      - name: Create ECR repository for frontend if not exists
-        run: |
-          aws ecr describe-repositories --repository-names cicd-final-frontend || aws ecr create-repository --repository-name cicd-final-frontend
       - name: Build and push frontend Docker image
         run: |
-          FRONTEND_REPO=${{ secrets.ECR_REPO_URL }}-frontend
-          docker build -t $FRONTEND_REPO:latest ./frontend
-          docker push $FRONTEND_REPO:latest
+          docker build -t ${{ secrets.ECR_REPO_URL_FRONTEND }}:latest ./frontend
+          docker push ${{ secrets.ECR_REPO_URL_FRONTEND }}:latest
 
   terraform-validate:
     runs-on: ubuntu-latest
@@ -111,4 +103,8 @@ jobs:
         run: |
           cd infra/terraform
           terraform init
-          terraform
+          terraform apply -auto-approve
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
