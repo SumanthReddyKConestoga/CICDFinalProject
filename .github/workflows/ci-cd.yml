@@ -79,6 +79,7 @@ jobs:
         env:
           FALLBACK_ECR: ${{ secrets.ECR_REPO_BACKEND }}
         run: |
+          set -euxo pipefail
           IMAGE_URI="$BACKEND_IMAGE_URI"
           if [ -z "$IMAGE_URI" ]; then
             IMAGE_URI="$FALLBACK_ECR"
@@ -95,8 +96,27 @@ jobs:
             docker build -t backend:latest ./backend
           else
             echo "Building and pushing image: $IMAGE_URI:latest"
+            export DOCKER_BUILDKIT=1
+            export COMPOSE_HTTP_TIMEOUT=300
             docker build -t "$IMAGE_URI:latest" ./backend
-            docker push "$IMAGE_URI:latest"
+            # ensure docker is logged into the registry (extra safety)
+            if [[ "$IMAGE_URI" =~ ^([0-9]+)\.dkr\.ecr\.(.+)\.amazonaws\.com/ ]]; then
+              REGISTRY="${BASH_REMATCH[1]}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com"
+              aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin $REGISTRY || true
+            fi
+            # retry push on transient network errors
+            for i in 1 2 3 4 5; do
+              if docker push "$IMAGE_URI:latest"; then
+                echo "docker push succeeded"
+                break
+              else
+                echo "docker push failed on attempt $i, retrying..."
+                sleep $((i * 10))
+              fi
+              if [ "$i" -eq 5 ]; then
+                echo "docker push failed after retries"; exit 1
+              fi
+            done
           fi
 
   push-frontend:
@@ -145,6 +165,7 @@ jobs:
         env:
           FALLBACK_ECR_FRONT: ${{ secrets.ECR_REPO_FRONTEND }}
         run: |
+          set -euxo pipefail
           IMAGE_URI="$FRONTEND_IMAGE_URI"
           if [ -z "$IMAGE_URI" ]; then
             IMAGE_URI="$FALLBACK_ECR_FRONT"
@@ -161,8 +182,25 @@ jobs:
             docker build -t frontend:latest ./frontend
           else
             echo "Building and pushing image: $IMAGE_URI:latest"
+            export DOCKER_BUILDKIT=1
+            export COMPOSE_HTTP_TIMEOUT=300
             docker build -t "$IMAGE_URI:latest" ./frontend
-            docker push "$IMAGE_URI:latest"
+            if [[ "$IMAGE_URI" =~ ^([0-9]+)\.dkr\.ecr\.(.+)\.amazonaws\.com/ ]]; then
+              REGISTRY="${BASH_REMATCH[1]}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com"
+              aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin $REGISTRY || true
+            fi
+            for i in 1 2 3 4 5; do
+              if docker push "$IMAGE_URI:latest"; then
+                echo "docker push succeeded"
+                break
+              else
+                echo "docker push failed on attempt $i, retrying..."
+                sleep $((i * 10))
+              fi
+              if [ "$i" -eq 5 ]; then
+                echo "docker push failed after retries"; exit 1
+              fi
+            done
           fi
 
   terraform-validate:
