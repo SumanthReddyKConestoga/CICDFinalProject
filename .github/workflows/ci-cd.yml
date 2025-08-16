@@ -53,78 +53,47 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Verify AWS credentials and region
-        run: |
-          aws sts get-caller-identity
-          aws ecr describe-repositories --region ${{ secrets.AWS_REGION }} || echo "ECR repo not found, will create."
-
-      - name: Create backend ECR repository if not exists
+      - name: Ensure backend ECR repo exists
         env:
-          BACKEND_ECR_REPO: ${{ secrets.ECR_REPO_BACKEND }}
-          BACKEND_ECR_URL:  ${{ secrets.ECR_REPO_BACKEND }}
+          ECR_URI: ${{ secrets.ECR_REPO_BACKEND }}  # full URI, e.g. 012345678901.dkr.ecr.us-east-1.amazonaws.com/cicd-final-backend
+          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          REPO_NAME="$BACKEND_ECR_REPO"
-          if [ -z "$REPO_NAME" ] && [ -n "$BACKEND_ECR_URL" ]; then
-            REPO_NAME=$(echo "$BACKEND_ECR_URL" | awk -F/ '{print $2}')
-          fi
-          if [ -z "$REPO_NAME" ]; then
-            echo "No backend ECR repository name provided; skipping creation. Set secret ECR_REPO_BACKEND."; 
-          else
-            aws ecr describe-repositories --repository-names "$REPO_NAME" --region ${{ secrets.AWS_REGION }} \
-              || aws ecr create-repository --repository-name "$REPO_NAME" --region ${{ secrets.AWS_REGION }}
-            echo "BACKEND_ECR_NAME=$REPO_NAME" >> $GITHUB_ENV
-          fi
+          set -euxo pipefail
+          REPO_NAME="$(echo "$ECR_URI" | awk -F/ '{print $2}')"
+          aws ecr describe-repositories --repository-names "$REPO_NAME" --region "$AWS_REGION" \
+            || aws ecr create-repository --repository-name "$REPO_NAME" --region "$AWS_REGION"
+          echo "BACKEND_IMAGE_URI=$ECR_URI" >> $GITHUB_ENV
 
-      - name: Resolve backend ECR repository URI
+      - name: ECR login (manual, retry)
+        env:
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          AWS_REGION:     ${{ secrets.AWS_REGION }}
         run: |
-          if [ -n "$BACKEND_ECR_NAME" ]; then
-            REPO_URI=$(aws ecr describe-repositories --repository-names "$BACKEND_ECR_NAME" --region ${{ secrets.AWS_REGION }} --query 'repositories[0].repositoryUri' --output text)
-            echo "BACKEND_IMAGE_URI=$REPO_URI" >> $GITHUB_ENV
-          else
-            echo "BACKEND_IMAGE_URI=" >> $GITHUB_ENV
-          fi
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+          set -euxo pipefail
+          REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          for i in 1 2 3 4 5; do
+            if aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"; then
+              echo "ECR login OK"
+              break
+            fi
+            echo "ECR login failed (attempt $i); retrying..."
+            sleep $((i*10))
+            if [ $i -eq 5 ]; then echo "ECR login failed after retries"; exit 1; fi
+          done
 
       - name: Build and push backend Docker image
         env:
-          FALLBACK_ECR: ${{ secrets.ECR_REPO_BACKEND }}
+          IMAGE_URI: ${{ env.BACKEND_IMAGE_URI }}
         run: |
           set -euxo pipefail
-          IMAGE_URI="${BACKEND_IMAGE_URI:-}"
-          if [ -z "$IMAGE_URI" ]; then
-            IMAGE_URI="$FALLBACK_ECR"
-          fi
-          if [ -z "$IMAGE_URI" ]; then
-            if [ -n "${{ secrets.AWS_ACCOUNT_ID }}" ] && [ -n "${{ secrets.AWS_REGION }}" ]; then
-              IMAGE_URI="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/cicd-final-backend"
-              echo "No explicit repo configured; using constructed ECR URI: $IMAGE_URI"
-            fi
-          fi
-          if [ -z "$IMAGE_URI" ]; then
-            echo "No BACKEND_IMAGE_URI available; building local image only."
-            docker build -t backend:latest ./backend
-          else
-            echo "Building and pushing image: $IMAGE_URI:latest"
-            export DOCKER_BUILDKIT=1
-            docker build -t "$IMAGE_URI:latest" ./backend
-            if [[ "$IMAGE_URI" =~ ^([0-9]+)\.dkr\.ecr\.(.+)\.amazonaws\.com/ ]]; then
-              REGISTRY="${BASH_REMATCH[1]}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com"
-              aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin "$REGISTRY" || true
-            fi
-            for i in 1 2 3 4 5; do
-              if docker push "$IMAGE_URI:latest"; then
-                break
-              fi
-              echo "docker push failed on attempt $i, retrying..."
-              sleep $((i * 10))
-              if [ "$i" -eq 5 ]; then
-                echo "docker push failed after retries"; exit 1
-              fi
-            done
-          fi
+          export DOCKER_BUILDKIT=1
+          docker build -t "$IMAGE_URI:latest" ./backend
+          for i in 1 2 3 4 5; do
+            docker push "$IMAGE_URI:latest" && break
+            echo "docker push failed (attempt $i); retrying..."
+            sleep $((i*10))
+            if [ $i -eq 5 ]; then echo "push failed after retries"; exit 1; fi
+          done
 
   push-frontend:
     runs-on: ubuntu-latest
@@ -139,78 +108,47 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Verify AWS credentials and region
-        run: |
-          aws sts get-caller-identity
-          aws ecr describe-repositories --region ${{ secrets.AWS_REGION }} || echo "ECR repo not found, will create."
-
-      - name: Create frontend ECR repository if not exists
+      - name: Ensure frontend ECR repo exists
         env:
-          FRONTEND_ECR_REPO: ${{ secrets.ECR_REPO_FRONTEND }}
-          FRONTEND_ECR_URL:  ${{ secrets.ECR_REPO_FRONTEND }}
+          ECR_URI: ${{ secrets.ECR_REPO_FRONTEND }}  # full URI
+          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          REPO_NAME="$FRONTEND_ECR_REPO"
-          if [ -z "$REPO_NAME" ] && [ -n "$FRONTEND_ECR_URL" ]; then
-            REPO_NAME=$(echo "$FRONTEND_ECR_URL" | awk -F/ '{print $2}')
-          fi
-          if [ -z "$REPO_NAME" ]; then
-            echo "No frontend ECR repository name provided; skipping creation. Set secret ECR_REPO_FRONTEND.";
-          else
-            aws ecr describe-repositories --repository-names "$REPO_NAME" --region ${{ secrets.AWS_REGION }} \
-              || aws ecr create-repository --repository-name "$REPO_NAME" --region ${{ secrets.AWS_REGION }}
-            echo "FRONTEND_ECR_NAME=$REPO_NAME" >> $GITHUB_ENV
-          fi
+          set -euxo pipefail
+          REPO_NAME="$(echo "$ECR_URI" | awk -F/ '{print $2}')"
+          aws ecr describe-repositories --repository-names "$REPO_NAME" --region "$AWS_REGION" \
+            || aws ecr create-repository --repository-name "$REPO_NAME" --region "$AWS_REGION"
+          echo "FRONTEND_IMAGE_URI=$ECR_URI" >> $GITHUB_ENV
 
-      - name: Resolve frontend ECR repository URI
+      - name: ECR login (manual, retry)
+        env:
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          AWS_REGION:     ${{ secrets.AWS_REGION }}
         run: |
-          if [ -n "$FRONTEND_ECR_NAME" ]; then
-            REPO_URI=$(aws ecr describe-repositories --repository-names "$FRONTEND_ECR_NAME" --region ${{ secrets.AWS_REGION }} --query 'repositories[0].repositoryUri' --output text)
-            echo "FRONTEND_IMAGE_URI=$REPO_URI" >> $GITHUB_ENV
-          else
-            echo "FRONTEND_IMAGE_URI=" >> $GITHUB_ENV
-          fi
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+          set -euxo pipefail
+          REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          for i in 1 2 3 4 5; do
+            if aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"; then
+              echo "ECR login OK"
+              break
+            fi
+            echo "ECR login failed (attempt $i); retrying..."
+            sleep $((i*10))
+            if [ $i -eq 5 ]; then echo "ECR login failed after retries"; exit 1; fi
+          done
 
       - name: Build and push frontend Docker image
         env:
-          FALLBACK_ECR_FRONT: ${{ secrets.ECR_REPO_FRONTEND }}
+          IMAGE_URI: ${{ env.FRONTEND_IMAGE_URI }}
         run: |
           set -euxo pipefail
-          IMAGE_URI="${FRONTEND_IMAGE_URI:-}"
-          if [ -z "$IMAGE_URI" ]; then
-            IMAGE_URI="$FALLBACK_ECR_FRONT"
-          fi
-          if [ -z "$IMAGE_URI" ]; then
-            if [ -n "${{ secrets.AWS_ACCOUNT_ID }}" ] && [ -n "${{ secrets.AWS_REGION }}" ]; then
-              IMAGE_URI="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/cicd-final-frontend"
-              echo "No explicit repo configured; using constructed ECR URI: $IMAGE_URI"
-            fi
-          fi
-          if [ -z "$IMAGE_URI" ]; then
-            echo "No FRONTEND_IMAGE_URI available; building local image only."
-            docker build -t frontend:latest ./frontend
-          else
-            echo "Building and pushing image: $IMAGE_URI:latest"
-            export DOCKER_BUILDKIT=1
-            docker build -t "$IMAGE_URI:latest" ./frontend
-            if [[ "$IMAGE_URI" =~ ^([0-9]+)\.dkr\.ecr\.(.+)\.amazonaws\.com/ ]]; then
-              REGISTRY="${BASH_REMATCH[1]}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com"
-              aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin "$REGISTRY" || true
-            fi
-            for i in 1 2 3 4 5; do
-              if docker push "$IMAGE_URI:latest"; then
-                break
-              fi
-              echo "docker push failed on attempt $i, retrying..."
-              sleep $((i * 10))
-              if [ "$i" -eq 5 ]; then
-                echo "docker push failed after retries"; exit 1
-              fi
-            done
-          fi
+          export DOCKER_BUILDKIT=1
+          docker build -t "$IMAGE_URI:latest" ./frontend
+          for i in 1 2 3 4 5; do
+            docker push "$IMAGE_URI:latest" && break
+            echo "docker push failed (attempt $i); retrying..."
+            sleep $((i*10))
+            if [ $i -eq 5 ]; then echo "push failed after retries"; exit 1; fi
+          done
 
   terraform-validate:
     runs-on: ubuntu-latest
@@ -234,20 +172,31 @@ jobs:
           cd infra/terraform
           terraform fmt -recursive
 
-
-
       - name: Terraform Validate
         run: |
           cd infra/terraform
           terraform init -backend=false -input=false
           terraform validate
 
-      - name: Terraform Plan
+      # Do not fail CI when plan reports changes (exit code 2)
+      - name: Terraform Plan (non-fatal)
         run: |
           cd infra/terraform
           terraform init -input=false
-          terraform plan -no-color
-
+          set +e
+          terraform plan -no-color -detailed-exitcode -out=tfplan_validate
+          code=$?
+          set -e
+          if [ $code -eq 0 ]; then
+            echo "Plan: no changes."
+            exit 0
+          elif [ $code -eq 2 ]; then
+            echo "Plan: changes detected (expected in validate stage)."
+            exit 0
+          else
+            echo "Plan failed with exit code $code"
+            exit $code
+          fi
 
   deploy-ec2:
     runs-on: ubuntu-latest
@@ -257,6 +206,8 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -265,56 +216,33 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: AWS Hard Cleanup (safe idempotent)
+      # Minimal safe cleanup to avoid name collisions
+      - name: AWS Cleanup (idempotent)
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          set -euo pipefail
-          REGION=${{ secrets.AWS_REGION }}
-
-          # --- ALB + listeners ---
-          LB_NAME=ec2-app-alb
-          LB_ARN=$(aws elbv2 describe-load-balancers --names "$LB_NAME" \
-            --query 'LoadBalancers[0].LoadBalancerArn' --output text --region $REGION 2>/dev/null || true)
-          if [ -n "${LB_ARN:-}" ] && [ "$LB_ARN" != "None" ]; then
-            for L in $(aws elbv2 describe-listeners --load-balancer-arn "$LB_ARN" \
-                        --query 'Listeners[*].ListenerArn' --output text --region $REGION 2>/dev/null || true); do
-              aws elbv2 delete-listener --listener-arn "$L" --region $REGION || true
-            done
-            aws elbv2 delete-load-balancer --load-balancer-arn "$LB_ARN" --region $REGION || true
-            aws elbv2 wait load-balancers-deleted --load-balancer-arns "$LB_ARN" --region $REGION || true
-          fi
-
-          # --- Colliding Target Groups ---
+          set -euxo pipefail
+          # delete colliding named TGs (ignore if absent)
           for TG in ec2-app-backend-tg ecs-app-tg ecs-backend-tg ec2-app-tg; do
-            TG_ARN=$(aws elbv2 describe-target-groups --names "$TG" \
-                     --query 'TargetGroups[0].TargetGroupArn' --output text --region $REGION 2>/dev/null || true)
-            if [ -n "${TG_ARN:-}" ] && [ "$TG_ARN" != "None" ]; then
-              aws elbv2 delete-target-group --target-group-arn "$TG_ARN" --region $REGION || true
-            fi
+            aws elbv2 delete-target-group --target-group-arn \
+              "$(aws elbv2 describe-target-groups --names "$TG" --query 'TargetGroups[0].TargetGroupArn' --output text --region "$AWS_REGION" 2>/dev/null || echo "")" \
+              --region "$AWS_REGION" || true
           done
-
-          # --- Instance profile + Roles (detach first) ---
-          if aws iam get-instance-profile --instance-profile-name ec2-app-profile >/dev/null 2>&1; then
-            ROLE_IN_PROFILE=$(aws iam get-instance-profile --instance-profile-name ec2-app-profile \
-                              --query 'InstanceProfile.Roles[0].RoleName' --output text || true)
-            if [ -n "${ROLE_IN_PROFILE:-}" ] && [ "$ROLE_IN_PROFILE" != "None" ]; then
-              aws iam remove-role-from-instance-profile --instance-profile-name ec2-app-profile \
-                --role-name "$ROLE_IN_PROFILE" || true
-            fi
-            aws iam delete-instance-profile --instance-profile-name ec2-app-profile || true
+          # delete a leftover ALB by name (ignore if absent)
+          LB_ARN=$(aws elbv2 describe-load-balancers --names ec2-app-alb --query 'LoadBalancers[0].LoadBalancerArn' --output text --region "$AWS_REGION" 2>/dev/null || true)
+          if [ -n "$LB_ARN" ] && [ "$LB_ARN" != "None" ]; then
+            for L in $(aws elbv2 describe-listeners --load-balancer-arn "$LB_ARN" --query 'Listeners[*].ListenerArn' --output text --region "$AWS_REGION" 2>/dev/null || true); do
+              aws elbv2 delete-listener --listener-arn "$L" --region "$AWS_REGION" || true
+            done
+            aws elbv2 delete-load-balancer --load-balancer-arn "$LB_ARN" --region "$AWS_REGION" || true
           fi
-
+          # remove legacy IAM resources by name (ignore if absent)
           for ROLE in ec2-app-role ecsTaskExecutionRole; do
-            if aws iam get-role --role-name "$ROLE" >/dev/null 2>&1; then
-              for P in $(aws iam list-attached-role-policies --role-name "$ROLE" \
-                         --query 'AttachedPolicies[*].PolicyArn' --output text); do
-                aws iam detach-role-policy --role-name "$ROLE" --policy-arn "$P" || true
-              done
-              for P in $(aws iam list-role-policies --role-name "$ROLE" \
-                         --query 'PolicyNames[*]' --output text); do
-                aws iam delete-role-policy --role-name "$ROLE" --policy-name "$P" || true
-              done
-              aws iam delete-role --role-name "$ROLE" || true
-            fi
+            aws iam get-role --role-name "$ROLE" >/dev/null 2>&1 || continue
+            for P in $(aws iam list-attached-role-policies --role-name "$ROLE" --query 'AttachedPolicies[*].PolicyArn' --output text); do
+              aws iam detach-role-policy --role-name "$ROLE" --policy-arn "$P" || true
+            done
+            aws iam delete-role --role-name "$ROLE" || true
           done
 
       - name: Terraform Apply
