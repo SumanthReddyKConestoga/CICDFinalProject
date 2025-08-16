@@ -23,3 +23,15 @@ coverage/
 # docker
 *.pid
 "@ | Set-Content -Encoding utf8 .gitignore
+
+# Terraform
+**/.terraform/*
+*.tfstate*
+crash.log
+
+
+# Terraform
+**/.terraform/*
+*.tfstate*
+crash.log
+
