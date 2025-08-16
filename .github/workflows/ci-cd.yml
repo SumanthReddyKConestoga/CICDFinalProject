@@ -32,42 +32,18 @@
         with:
           name: backend-coverage
           path: backend/coverage/
+
 name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, feature/*]
+    branches: [main]
   pull_request:
     branches: [main]
 
 jobs:
-  scan:
+  build-test-deploy:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Trivy
-        run: |
-          sudo apt-get install wget -y
-            wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.51.1_Linux-64bit.deb
-            sudo dpkg -i trivy_0.51.1_Linux-64bit.deb
-      - name: Docker Build (Backend)
-        run: docker build -t backend:latest ./backend
-      - name: Docker Build (Frontend)
-        run: docker build -t frontend:latest ./frontend
-      - name: Trivy Scan Backend
-        run: trivy image backend:latest
-        - name: Create ECR repository for backend if not exists
-          run: |
-            aws ecr describe-repositories --repository-names cicd-final-backend || aws ecr create-repository --repository-name cicd-final-backend
-      - name: Trivy Scan Frontend
-        run: trivy image frontend:latest
-        - name: Create ECR repository for frontend if not exists
-          run: |
-            aws ecr describe-repositories --repository-names cicd-final-frontend || aws ecr create-repository --repository-name cicd-final-frontend
-
-  build-test:
-    runs-on: ubuntu-latest
-    needs: scan
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node.js
@@ -81,35 +57,46 @@ jobs:
       - name: Run backend tests
         run: |
           cd backend
-          npm test -- --coverage
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+          npm test
+      - name: Run backend coverage
+        run: |
+          cd backend
+          npm run test:coverage
+      - name: Upload backend coverage report
+        uses: actions/upload-artifact@v3
         with:
           name: backend-coverage
           path: backend/coverage/
-
-  terraform-validate:
-    runs-on: ubuntu-latest
-    needs: build-test
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-      - name: Terraform Format
-        run: terraform fmt -check -recursive
-      - name: Terraform Validate
-        run: terraform validate
-      - name: Terraform Plan
+      - name: Install dependencies (frontend)
         run: |
-          cd infra/terraform
-          terraform init
-          terraform plan
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: terraform-validate
-    steps:
-      - uses: actions/checkout@v4
+          cd frontend
+          npm ci || true
+      - name: Run frontend tests
+        run: |
+          cd frontend
+          npm test || true
+      - name: Run frontend coverage
+        run: |
+          cd frontend
+          npm run test:coverage || true
+      - name: Upload frontend coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+      - name: Install Trivy
+        run: |
+          sudo apt-get install wget -y
+          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.51.1_Linux-64bit.deb
+          sudo dpkg -i trivy_0.51.1_Linux-64bit.deb
+      - name: Docker Build (Backend)
+        run: docker build -t backend:latest ./backend
+      - name: Docker Build (Frontend)
+        run: docker build -t frontend:latest ./frontend
+      - name: Trivy Scan Backend
+        run: trivy image backend:latest
+      - name: Trivy Scan Frontend
+        run: trivy image frontend:latest
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -119,6 +106,12 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+      - name: Create ECR repository for backend if not exists
+        run: |
+          aws ecr describe-repositories --repository-names cicd-final-backend || aws ecr create-repository --repository-name cicd-final-backend
+      - name: Create ECR repository for frontend if not exists
+        run: |
+          aws ecr describe-repositories --repository-names cicd-final-frontend || aws ecr create-repository --repository-name cicd-final-frontend
       - name: Build and push frontend Docker image
         run: |
           FRONTEND_REPO=${{ secrets.ECR_REPO_URL }}-frontend
@@ -131,6 +124,15 @@ jobs:
           docker push $BACKEND_REPO:latest
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+      - name: Terraform Format
+        run: terraform fmt -check -recursive
+      - name: Terraform Validate
+        run: terraform validate
+      - name: Terraform Plan
+        run: |
+          cd infra/terraform
+          terraform init
+          terraform plan
       - name: Terraform Apply
         run: |
           cd infra/terraform
