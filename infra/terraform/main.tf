@@ -15,17 +15,16 @@ module "security" {
 }
 
 module "ec2" {
-  source               = "./modules/ec2"
-  ami_id               = data.aws_ami.al2023.id
-  instance_type        = var.instance_type
-  subnet_id            = module.vpc.public_subnet_1_id
-  security_group_id    = module.security.app_sg_id
-  assign_public_ip     = var.assign_public_ip
-  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
-  key_name             = aws_key_pair.deployer.key_name
-  user_data            = local.user_data
-  backend_ecr_repo     = var.backend_ecr_repo
-  frontend_ecr_repo    = var.frontend_ecr_repo
+  source = "./modules/ec2"
+
+  ami_id                    = data.aws_ami.al2023.id
+  subnet_id                 = module.vpc.public_subnet_1_id
+  app_sg_id                 = module.security.app_sg_id
+  instance_type             = var.instance_type
+  assign_public_ip          = var.assign_public_ip
+  iam_instance_profile_name = aws_iam_instance_profile.ec2_profile.name
+  key_name                  = var.key_pair_name          # <-- FIXED
+  user_data                 = local.user_data
 }
 
 module "alb" {
