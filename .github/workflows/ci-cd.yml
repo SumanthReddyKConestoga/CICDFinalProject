@@ -60,15 +60,44 @@ jobs:
             echo "No backend ECR repository name provided; skipping creation. Set secret ECR_REPOSITORY_BACKEND or ECR_REPO_URL.";
           else
             aws ecr describe-repositories --repository-names "$REPO_NAME" --region ${{ secrets.AWS_REGION }} || aws ecr create-repository --repository-name "$REPO_NAME" --region ${{ secrets.AWS_REGION }}
+            # write resolved repository name to GITHUB_ENV for later steps
+            echo "BACKEND_ECR_NAME=$REPO_NAME" >> $GITHUB_ENV
+          fi
+      - name: Resolve backend ECR repository URI
+        run: |
+          if [ -n "$BACKEND_ECR_NAME" ]; then
+            REPO_URI=$(aws ecr describe-repositories --repository-names "$BACKEND_ECR_NAME" --region ${{ secrets.AWS_REGION }} --query 'repositories[0].repositoryUri' --output text)
+            echo "BACKEND_IMAGE_URI=$REPO_URI" >> $GITHUB_ENV
+          else
+            echo "BACKEND_IMAGE_URI=" >> $GITHUB_ENV
           fi
       
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
       - name: Build and push backend Docker image
+        env:
+          FALLBACK_ECR: ${{ secrets.ECR_REPO_BACKEND }}
         run: |
-          docker build -t ${{ secrets.ECR_REPO_BACKEND }}:latest ./backend
-          docker push ${{ secrets.ECR_REPO_BACKEND }}:latest
+          IMAGE_URI="$BACKEND_IMAGE_URI"
+          if [ -z "$IMAGE_URI" ]; then
+            IMAGE_URI="$FALLBACK_ECR"
+          fi
+          # final safe fallback: construct from account/region and a sane repo name
+          if [ -z "$IMAGE_URI" ]; then
+            if [ -n "${{ secrets.AWS_ACCOUNT_ID }}" ] && [ -n "${{ secrets.AWS_REGION }}" ]; then
+              IMAGE_URI="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/cicd-final-backend"
+              echo "No explicit repo configured; using constructed ECR URI: $IMAGE_URI"
+            fi
+          fi
+          if [ -z "$IMAGE_URI" ]; then
+            echo "No BACKEND_IMAGE_URI resolved and no fallback secret; building local image and skipping push.";
+            docker build -t backend:latest ./backend
+          else
+            echo "Building and pushing image: $IMAGE_URI:latest"
+            docker build -t "$IMAGE_URI:latest" ./backend
+            docker push "$IMAGE_URI:latest"
+          fi
 
   push-frontend:
     runs-on: ubuntu-latest
@@ -99,14 +128,42 @@ jobs:
             echo "No frontend ECR repository name provided; skipping creation. Set secret ECR_REPOSITORY_FRONTEND or ECR_REPO_URL_FRONTEND.";
           else
             aws ecr describe-repositories --repository-names "$REPO_NAME" --region ${{ secrets.AWS_REGION }} || aws ecr create-repository --repository-name "$REPO_NAME" --region ${{ secrets.AWS_REGION }}
+            echo "FRONTEND_ECR_NAME=$REPO_NAME" >> $GITHUB_ENV
+          fi
+      - name: Resolve frontend ECR repository URI
+        run: |
+          if [ -n "$FRONTEND_ECR_NAME" ]; then
+            REPO_URI=$(aws ecr describe-repositories --repository-names "$FRONTEND_ECR_NAME" --region ${{ secrets.AWS_REGION }} --query 'repositories[0].repositoryUri' --output text)
+            echo "FRONTEND_IMAGE_URI=$REPO_URI" >> $GITHUB_ENV
+          else
+            echo "FRONTEND_IMAGE_URI=" >> $GITHUB_ENV
           fi
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
       - name: Build and push frontend Docker image
+        env:
+          FALLBACK_ECR_FRONT: ${{ secrets.ECR_REPO_FRONTEND }}
         run: |
-          docker build -t ${{ secrets.ECR_REPO_FRONTEND }}:latest ./frontend
-          docker push ${{ secrets.ECR_REPO_FRONTEND }}:latest
+          IMAGE_URI="$FRONTEND_IMAGE_URI"
+          if [ -z "$IMAGE_URI" ]; then
+            IMAGE_URI="$FALLBACK_ECR_FRONT"
+          fi
+          # final safe fallback: construct from account/region and a sane repo name
+          if [ -z "$IMAGE_URI" ]; then
+            if [ -n "${{ secrets.AWS_ACCOUNT_ID }}" ] && [ -n "${{ secrets.AWS_REGION }}" ]; then
+              IMAGE_URI="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/cicd-final-frontend"
+              echo "No explicit repo configured; using constructed ECR URI: $IMAGE_URI"
+            fi
+          fi
+          if [ -z "$IMAGE_URI" ]; then
+            echo "No FRONTEND_IMAGE_URI resolved and no fallback secret; building local image and skipping push.";
+            docker build -t frontend:latest ./frontend
+          else
+            echo "Building and pushing image: $IMAGE_URI:latest"
+            docker build -t "$IMAGE_URI:latest" ./frontend
+            docker push "$IMAGE_URI:latest"
+          fi
 
   terraform-validate:
     runs-on: ubuntu-latest
