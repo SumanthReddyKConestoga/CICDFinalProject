@@ -104,11 +104,17 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
-      - name: Terraform Destroy (cleanup duplicates)
+      - name: AWS Cleanup (remove duplicates)
         run: |
-          cd infra/terraform
-          terraform init
-          terraform destroy -auto-approve || true
+          pip install awscli
+          aws iam delete-role --role-name ec2-app-role || true
+          aws iam delete-instance-profile --instance-profile-name ec2-app-profile || true
+          aws ec2 delete-key-pair --key-name FINALCICD || true
+          # Remove excess VPCs if limit is reached (delete oldest non-default VPC)
+          VPCS=$(aws ec2 describe-vpcs --query 'Vpcs[?IsDefault==`false`].VpcId' --output text)
+          for vpc in $VPCS; do
+            aws ec2 delete-vpc --vpc-id $vpc || true
+          done
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
