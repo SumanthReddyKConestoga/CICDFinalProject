@@ -1,26 +1,11 @@
 #############################################
 # EC2 Instance (uses existing key pair)
+# AMI data source is declared in ami.tf
 #############################################
 
-# Use the existing EC2 key pair (e.g., FINALCICD); do NOT create/import again
+# Use the existing EC2 key pair (e.g., FINALCICD)
 data "aws_key_pair" "deployer" {
   key_name = var.key_pair_name
-}
-
-# Amazon Linux 2023 AMI (x86_64)
-data "aws_ami" "al2023" {
-  most_recent = true
-  owners      = ["137112412989"] # Amazon
-
-  filter {
-    name   = "name"
-    values = ["al2023-ami-*-x86_64"]
-  }
-
-  filter {
-    name   = "state"
-    values = ["available"]
-  }
 }
 
 locals {
@@ -34,7 +19,7 @@ locals {
 }
 
 resource "aws_instance" "app" {
-  ami                         = data.aws_ami.al2023.id
+  ami                         = data.aws_ami.al2023.id   # defined in ami.tf
   instance_type               = var.instance_type
 
   # Use outputs from your VPC & Security modules
@@ -49,7 +34,5 @@ resource "aws_instance" "app" {
 
   user_data = local.user_data
 
-  tags = {
-    Name = "ec2-app-instance"
-  }
+  tags = { Name = "ec2-app-instance" }
 }

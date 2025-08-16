@@ -6,7 +6,7 @@ data "aws_ami" "al2023" {
     values = ["al2023-ami-*-x86_64"]
   }
   filter {
-    name   = "architecture"
-    values = ["x86_64"]
+    name   = "state"
+    values = ["available"]
   }
 }
