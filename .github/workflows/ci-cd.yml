@@ -41,10 +41,22 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+            aws-region: ${{ secrets.AWS_REGION }}
+      - name: Verify AWS credentials and region
+        run: |
+          aws sts get-caller-identity
+          aws ecr describe-repositories --region ${{ secrets.AWS_REGION }} || echo "ECR repo not found, will create."
+      - name: Create ECR repository if not exists
+        run: |
+          aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} --region ${{ secrets.AWS_REGION }} || aws ecr create-repository --repository-name ${{ env.ECR_REPOSITORY }} --region ${{ secrets.AWS_REGION }}
+        env:
+          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+          with:
+            registry-type: public
+            region: ${{ secrets.AWS_REGION }}
       - name: Build and push backend Docker image
         run: |
           docker build -t ${{ secrets.ECR_REPO_URL }}:latest ./backend
