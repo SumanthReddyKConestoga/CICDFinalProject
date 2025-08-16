@@ -223,56 +223,27 @@ jobs:
           fi
 
   deploy-ec2:
-    runs-on: ubuntu-latest
-    needs: terraform-validate
-    steps:
-      - uses: actions/checkout@v4
+  runs-on: ubuntu-latest
+  needs: terraform-validate
+  steps:
+    - uses: actions/checkout@v4
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_wrapper: false
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+    - name: Terraform Apply
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: ${{ secrets.AWS_REGION }}
+      run: |
+        cd infra/terraform
+        terraform init
+        terraform apply -auto-approve
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_wrapper: false
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: AWS Cleanup (idempotent)
-        env:
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          set -euo pipefail
-          # delete colliding named TGs (ignore if absent)
-          for TG in ec2-app-backend-tg ecs-app-tg ecs-backend-tg ec2-app-tg; do
-            TG_ARN=$(aws elbv2 describe-target-groups --names "$TG" --query 'TargetGroups[0].TargetGroupArn' --output text --region "$AWS_REGION" 2>/dev/null || true)
-            [ -n "${TG_ARN:-}" ] && [ "$TG_ARN" != "None" ] && aws elbv2 delete-target-group --target-group-arn "$TG_ARN" --region "$AWS_REGION" || true
-          done
-          # delete a leftover ALB by name (ignore if absent)
-          LB_ARN=$(aws elbv2 describe-load-balancers --names ec2-app-alb --query 'LoadBalancers[0].LoadBalancerArn' --output text --region "$AWS_REGION" 2>/dev/null || true)
-          if [ -n "${LB_ARN:-}" ] && [ "$LB_ARN" != "None" ]; then
-            for L in $(aws elbv2 describe-listeners --load-balancer-arn "$LB_ARN" --query 'Listeners[*].ListenerArn' --output text --region "$AWS_REGION" 2>/dev/null || true); do
-              aws elbv2 delete-listener --listener-arn "$L" --region "$AWS_REGION" || true
-            done
-            aws elbv2 delete-load-balancer --load-balancer-arn "$LB_ARN" --region "$AWS_REGION" || true
-          fi
-          # remove legacy IAM roles by name (ignore if absent)
-          for ROLE in ec2-app-role ecsTaskExecutionRole; do
-            aws iam get-role --role-name "$ROLE" >/dev/null 2>&1 || continue
-            for P in $(aws iam list-attached-role-policies --role-name "$ROLE" --query 'AttachedPolicies[*].PolicyArn' --output text); do
-              aws iam detach-role-policy --role-name "$ROLE" --policy-arn "$P" || true
-            done
-            aws iam delete-role --role-name "$ROLE" || true
-          done
-
-      - name: Terraform Apply
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          cd infra/terraform
-          terraform init
-          terraform apply -auto-approve
