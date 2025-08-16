@@ -37,5 +37,5 @@ module "alb" {
   backend_tg_name   = "ec2-app-backend-tg"
   backend_port      = 3000
   vpc_id            = module.vpc.vpc_id
-  ec2_instance_id   = module.ec2.instance_app_id
+  ec2_instance_id   = module.ec2.instance_id
 }
