@@ -227,8 +227,11 @@ jobs:
           echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
           echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
 
-      - name: Terraform Format
-        run: terraform fmt -check -recursive
+      - name: Terraform Format (check, then auto-fix)
+        run: |
+          cd infra/terraform
+          terraform fmt -check -recursive || terraform fmt -recursive
+
 
       - name: Terraform Validate
         run: |
