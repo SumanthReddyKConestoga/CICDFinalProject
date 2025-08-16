@@ -107,10 +107,14 @@ jobs:
       - name: AWS Cleanup (remove duplicates)
         run: |
           pip install awscli
-          aws iam delete-role --role-name ec2-app-role || true
+          # Remove duplicate IAM roles
+          ROLES=$(aws iam list-roles --query "Roles[?RoleName=='ec2-app-role'].RoleName" --output text)
+          for role in $ROLES; do
+            aws iam delete-role --role-name $role || true
+          done
           aws iam delete-instance-profile --instance-profile-name ec2-app-profile || true
           aws ec2 delete-key-pair --key-name FINALCICD || true
-          # Remove excess VPCs if limit is reached (delete oldest non-default VPC)
+          # Remove excess VPCs if limit is reached (delete all non-default VPCs)
           VPCS=$(aws ec2 describe-vpcs --query 'Vpcs[?IsDefault==`false`].VpcId' --output text)
           for vpc in $VPCS; do
             aws ec2 delete-vpc --vpc-id $vpc || true
