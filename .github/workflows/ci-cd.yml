@@ -214,15 +214,21 @@ jobs:
         run: |
           echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
           echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
-          echo "AWS_DEFAULT_REGION=${{ secrets.AWS_DEFAULT_REGION }}" >> $GITHUB_ENV
+          # use AWS_REGION consistently across the workflow
+          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
       - name: Terraform Format
         run: terraform fmt -check -recursive
       - name: Terraform Validate
-        run: terraform validate
+        run: |
+          # run validate from the terraform folder so provider/backends are resolved correctly
+          cd infra/terraform
+          # init without backend so validate can run in the runner environment
+          terraform init -backend=false -input=false
+          terraform validate
       - name: Terraform Plan
         run: |
           cd infra/terraform
-          terraform init
+          terraform init -input=false
           terraform plan
 
   deploy-ec2:
@@ -237,7 +243,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
       - name: AWS Cleanup (remove duplicates)
         run: |
           pip install awscli
@@ -270,7 +276,7 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
       - name: Terraform Apply
         run: |
           cd infra/terraform
@@ -279,4 +285,4 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}

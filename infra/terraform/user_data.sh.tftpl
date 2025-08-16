@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euxo pipefail
 
-ECR_REPO_URL="${ecr_repo_url}"
+BACKEND_ECR_REPO="${backend_ecr_repo}"
+FRONTEND_ECR_REPO="${frontend_ecr_repo}"
 IMAGE_TAG="${image_tag}"
 APP_PORT="${app_port}"
 REGION="${aws_region}"
@@ -10,44 +11,58 @@ CONTAINER_NAME="app"
 # Install Docker and AWS CLI
 dnf update -y
 dnf install -y docker awscli
+# Install and enable SSM agent so we can use Session Manager for debugging
+dnf install -y amazon-ssm-agent || true
+systemctl enable --now amazon-ssm-agent || true
 systemctl enable docker
 systemctl start docker
 
-# Login to ECR
-aws ecr get-login-password --region "$REGION" \
-  | docker login --username AWS --password-stdin "$(echo "$ECR_REPO_URL" | cut -d'/' -f1)"
+# Deploy application from GitHub repo so instance can self-bootstrap without ECR
+REPO_URL="https://github.com/SumanthReddyKConestoga/CICDFinalProject.git"
+APP_ROOT="/opt/cicd-app"
+mkdir -p "$APP_ROOT"
+if ! command -v git >/dev/null 2>&1; then
+  dnf install -y git || true
+fi
+rm -rf "$APP_ROOT"/*
+git clone --depth 1 "$REPO_URL" "$APP_ROOT" || true
 
-
-
-# Pull images
-docker pull mysql:8.0
-docker pull "$ECR_REPO_URL-backend:$IMAGE_TAG"
-docker pull "$ECR_REPO_URL-frontend:$IMAGE_TAG"
-
-# Run MySQL container
+# Start DB
+docker pull mysql:8.0 || true
+docker rm -f db || true
 docker run -d --name db \
   -e MYSQL_ROOT_PASSWORD=Secret123! \
   -e MYSQL_DATABASE=appdb \
   -e MYSQL_USER=appuser \
   -e MYSQL_PASSWORD=Secret123! \
   -p 3306:3306 \
-  mysql:8.0
+  mysql:8.0 || true
 
-# Wait for MySQL to be ready
+# Wait for MySQL
 until docker exec db mysqladmin ping -h "localhost" --silent; do
   sleep 2
 done
 
-# Run backend (Node) on port 3000
-docker run -d --name backend \
-  --link db:db \
-  -e APP_PORT=3000 \
-  -e DB_HOST=db \
-  -e DB_USER=appuser \
-  -e DB_PASSWORD=Secret123! \
-  -e DB_NAME=appdb \
-  -p 3000:3000 \
-  $ECR_REPO_URL-backend:$IMAGE_TAG
+# Build or pull backend image
+if [ -f "$APP_ROOT/backend/Dockerfile" ]; then
+  docker build -t app-backend:latest "$APP_ROOT/backend" || true
+else
+  docker pull "$BACKEND_ECR_REPO:$IMAGE_TAG" || true
+  docker tag "$BACKEND_ECR_REPO:$IMAGE_TAG" app-backend:latest || true
+fi
 
-# Run frontend (Nginx) on port 80
-docker run -d --name frontend -p 80:80 $ECR_REPO_URL-frontend:$IMAGE_TAG
+# Build or pull frontend image
+if [ -d "$APP_ROOT/frontend" ]; then
+  docker build -t app-frontend:latest "$APP_ROOT/frontend" || true
+else
+  docker pull "$FRONTEND_ECR_REPO:$IMAGE_TAG" || true
+  docker tag "$FRONTEND_ECR_REPO:$IMAGE_TAG" app-frontend:latest || true
+fi
+
+# Run backend
+docker rm -f backend || true
+docker run -d --name backend --link db:db -e APP_PORT=3000 -e DB_HOST=db -e DB_USER=appuser -e DB_PASSWORD=Secret123! -e DB_NAME=appdb -p 3000:3000 app-backend:latest || true
+
+# Run frontend
+docker rm -f frontend || true
+docker run -d --name frontend -p 80:80 app-frontend:latest || true

@@ -24,6 +24,8 @@ module "ec2" {
   iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
   key_name             = aws_key_pair.deployer.key_name
   user_data            = local.user_data
+  backend_ecr_repo     = var.backend_ecr_repo
+  frontend_ecr_repo    = var.frontend_ecr_repo
 }
 
 module "alb" {
@@ -33,6 +35,8 @@ module "alb" {
   subnet_ids        = [module.vpc.public_subnet_1_id, module.vpc.public_subnet_2_id]
   tg_name           = "ec2-app-tg"
   target_port       = 80
+  backend_tg_name   = "ec2-app-backend-tg"
+  backend_port      = 3000
   vpc_id            = module.vpc.vpc_id
   ec2_instance_id   = module.ec2.instance_app_id
 }

@@ -4,7 +4,8 @@ resource "aws_key_pair" "deployer" {
 }
 locals {
   user_data = templatefile("${path.module}/user_data.sh.tftpl", {
-    ecr_repo_url = var.ecr_repo_url
+  backend_ecr_repo  = var.backend_ecr_repo
+  frontend_ecr_repo = var.frontend_ecr_repo
     image_tag    = var.image_tag
     app_port     = var.app_port
     aws_region   = var.aws_region

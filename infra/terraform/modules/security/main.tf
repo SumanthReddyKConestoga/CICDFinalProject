@@ -27,8 +27,18 @@ resource "aws_security_group" "app_sg" {
     from_port       = 80
     to_port         = 80
     protocol        = "tcp"
+    # only allow ALB security group
     security_groups = [aws_security_group.alb_sg.id]
   }
+  # remove public HTTP from app_sg; ALB will be public
+  ingress {
+    description     = "Backend port from ALB"
+    from_port       = 3000
+    to_port         = 3000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb_sg.id]
+  }
+  # backend access is only allowed from ALB security group
   ingress {
     description = "SSH"
     from_port   = 22
@@ -44,3 +54,5 @@ resource "aws_security_group" "app_sg" {
   }
   tags = { Name = var.app_sg_name }
 }
+
+// outputs moved to outputs.tf

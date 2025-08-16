@@ -6,3 +6,5 @@ variable "assign_public_ip" { type = bool }
 variable "iam_instance_profile" { type = string }
 variable "key_name" { type = string }
 variable "user_data" { type = string }
+variable "backend_ecr_repo" { type = string }
+variable "frontend_ecr_repo" { type = string }
