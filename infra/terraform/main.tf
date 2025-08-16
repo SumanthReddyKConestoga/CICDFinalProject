@@ -33,7 +33,7 @@ module "ec2" {
   instance_type             = var.instance_type
   assign_public_ip          = var.assign_public_ip
   iam_instance_profile_name = aws_iam_instance_profile.ec2_profile.name
-  key_name                  = var.key_pair_name      # <-- this is now optional/empty-ok
+  # key_name omitted on purpose to avoid InvalidKeyPair.NotFound
   user_data                 = local.user_data
 }
 

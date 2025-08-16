@@ -1,14 +1,13 @@
 #############################################
-# ECS (Fargate) – Cluster, Tasks, Services
-# IAM for execution role is defined in iam.tf
+# ECS Cluster
 #############################################
-
 resource "aws_ecs_cluster" "app" {
   name = "cicd-final-cluster"
 }
 
-# ---------- Task definitions ----------
-
+#############################################
+# Task Definitions (use execution role from iam.tf)
+#############################################
 resource "aws_ecs_task_definition" "backend" {
   family                   = "cicd-backend"
   network_mode             = "awsvpc"
@@ -45,13 +44,13 @@ resource "aws_ecs_task_definition" "frontend" {
   ])
 }
 
-# ---------- Security group for tasks ----------
-
+#############################################
+# Security group for ECS tasks
+#############################################
 resource "aws_security_group" "ecs_tasks_sg" {
   name   = "ecs-tasks-sg"
   vpc_id = module.vpc.vpc_id
 
-  # Outbound to internet
   egress {
     from_port   = 0
     to_port     = 0
@@ -59,7 +58,7 @@ resource "aws_security_group" "ecs_tasks_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Inbound from ALB only
+  # Allow ALB -> tasks on 80
   ingress {
     description     = "Allow HTTP from ALB"
     from_port       = 80
@@ -68,6 +67,7 @@ resource "aws_security_group" "ecs_tasks_sg" {
     security_groups = [module.security.alb_sg_id]
   }
 
+  # Allow ALB -> backend on 3000
   ingress {
     description     = "Allow backend port from ALB"
     from_port       = 3000
@@ -77,8 +77,9 @@ resource "aws_security_group" "ecs_tasks_sg" {
   }
 }
 
-# ---------- Services ----------
-
+#############################################
+# ECS Services (WAIT for ALB module)
+#############################################
 resource "aws_ecs_service" "backend" {
   name            = "cicd-backend-svc"
   cluster         = aws_ecs_cluster.app.id
@@ -98,8 +99,11 @@ resource "aws_ecs_service" "backend" {
     container_port   = 3000
   }
 
-  # Ensure exec policy is attached before service create
-  depends_on = [aws_iam_role_policy_attachment.ecs_task_exec_attach]
+  # Ensure the ALB (listeners/rules) is fully created before this service
+  depends_on = [
+    aws_iam_role_policy_attachment.ecs_task_exec_attach,
+    module.alb
+  ]
 }
 
 resource "aws_ecs_service" "frontend" {
@@ -121,5 +125,9 @@ resource "aws_ecs_service" "frontend" {
     container_port   = 80
   }
 
-  depends_on = [aws_iam_role_policy_attachment.ecs_task_exec_attach]
+  # Ensure the ALB (listeners/rules) is fully created before this service
+  depends_on = [
+    aws_iam_role_policy_attachment.ecs_task_exec_attach,
+    module.alb
+  ]
 }
