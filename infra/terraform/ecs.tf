@@ -4,7 +4,7 @@ resource "aws_ecs_cluster" "app" {
 
 # IAM role for ECS task execution
 resource "aws_iam_role" "ecs_task_exec_role" {
-  name = "ecsTaskExecutionRole"
+  name               = "ecsTaskExecutionRole"
   assume_role_policy = data.aws_iam_policy_document.ecs_task_assume.json
 }
 
@@ -15,7 +15,7 @@ resource "aws_iam_role_policy_attachment" "ecs_task_exec_attach" {
 
 data "aws_iam_policy_document" "ecs_task_assume" {
   statement {
-    effect = "Allow"
+    effect  = "Allow"
     actions = ["sts:AssumeRole"]
     principals {
       type        = "Service"
@@ -35,10 +35,10 @@ resource "aws_ecs_task_definition" "backend" {
 
   container_definitions = jsonencode([
     {
-      name      = "backend"
-      image     = var.backend_ecr_repo
+      name         = "backend"
+      image        = var.backend_ecr_repo
       portMappings = [{ containerPort = 3000, protocol = "tcp" }]
-      essential = true
+      essential    = true
     }
   ])
 }
@@ -54,10 +54,10 @@ resource "aws_ecs_task_definition" "frontend" {
 
   container_definitions = jsonencode([
     {
-      name      = "frontend"
-      image     = var.frontend_ecr_repo
+      name         = "frontend"
+      image        = var.frontend_ecr_repo
       portMappings = [{ containerPort = 80, protocol = "tcp" }]
-      essential = true
+      essential    = true
     }
   ])
 }
@@ -99,8 +99,8 @@ resource "aws_ecs_service" "backend" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets         = [module.vpc.public_subnet_1_id, module.vpc.public_subnet_2_id]
-    security_groups = [aws_security_group.ecs_tasks_sg.id]
+    subnets          = [module.vpc.public_subnet_1_id, module.vpc.public_subnet_2_id]
+    security_groups  = [aws_security_group.ecs_tasks_sg.id]
     assign_public_ip = true
   }
 
@@ -121,8 +121,8 @@ resource "aws_ecs_service" "frontend" {
   launch_type     = "FARGATE"
 
   network_configuration {
-    subnets         = [module.vpc.public_subnet_1_id, module.vpc.public_subnet_2_id]
-    security_groups = [aws_security_group.ecs_tasks_sg.id]
+    subnets          = [module.vpc.public_subnet_1_id, module.vpc.public_subnet_2_id]
+    security_groups  = [aws_security_group.ecs_tasks_sg.id]
     assign_public_ip = true
   }
 

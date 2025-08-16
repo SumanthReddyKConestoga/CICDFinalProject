@@ -84,7 +84,7 @@ resource "aws_lb_listener" "app_listener" {
   protocol          = "HTTP"
   default_action {
     type             = "forward"
-  target_group_arn = aws_lb_target_group.ecs_app_tg.arn
+    target_group_arn = aws_lb_target_group.ecs_app_tg.arn
   }
 }
 
@@ -93,7 +93,7 @@ resource "aws_lb_listener_rule" "api_rule" {
   priority     = 100
   action {
     type             = "forward"
-  target_group_arn = aws_lb_target_group.ecs_backend_tg.arn
+    target_group_arn = aws_lb_target_group.ecs_backend_tg.arn
   }
   condition {
     path_pattern {

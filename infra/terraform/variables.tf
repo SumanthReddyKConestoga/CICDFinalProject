@@ -8,7 +8,7 @@ variable "public_key_path" {
 # Actions env or add a uniquely-named variable here (e.g., project_name) and reference it
 # from root-only Terraform code.
 variable "backend_ecr_repo" {
-  type    = string
+  type = string
   # Default points to the expected ECR repo used in this project. Overridden by terraform.tfvars or CI env/secrets.
   default = "019773930547.dkr.ecr.us-east-1.amazonaws.com/cicd-final-backend"
 }

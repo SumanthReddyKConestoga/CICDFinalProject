@@ -23,10 +23,10 @@ resource "aws_security_group" "app_sg" {
   description = "Allow ALB and SSH to EC2"
   vpc_id      = var.vpc_id
   ingress {
-    description     = "App port from ALB"
-    from_port       = 80
-    to_port         = 80
-    protocol        = "tcp"
+    description = "App port from ALB"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
     # only allow ALB security group
     security_groups = [aws_security_group.alb_sg.id]
   }
