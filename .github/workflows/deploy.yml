@@ -1,66 +1,45 @@
-name: deploy
-#new code new code new code 
+name: Deploy to AWS
+
 on:
   push:
-    branches: ["main"]
-    paths:
-      - "infra/terraform/**"
-      - ".github/workflows/deploy.yml"
-  workflow_dispatch:
+    branches:
+      - main
 
 env:
-  AWS_REGION:        ${{ secrets.AWS_REGION }}
-  AWS_ACCOUNT_ID:    ${{ secrets.AWS_ACCOUNT_ID }}
-  TF_STATE_BUCKET:   ${{ secrets.TF_STATE_BUCKET }}
-  TF_STATE_TABLE:    ${{ secrets.TF_STATE_TABLE }}
-  IMAGE_TAG:         latest                # use a tag that definitely exists
-  ECR_BACKEND:       cicd-final-backend
-  ECR_FRONTEND:      cicd-final-frontend
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: cicd-final-backend
+  ECS_CLUSTER: cicd-cluster
+  ECS_SERVICE: cicd-service
+  CONTAINER_NAME: backend-container
 
 jobs:
-  terraform-apply:
+  deploy:
     runs-on: ubuntu-latest
-    permissions: { contents: read }
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      # === Learner Lab credentials (temporary STS creds) ===
-      - name: Configure AWS (Learner Lab)
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-region:            ${{ env.AWS_REGION }}
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      # Optional: quick sanity check; remove later if you want
-      - name: Who am I?
-        run: aws sts get-caller-identity
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Install Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform init
-        working-directory: infra/terraform
-        env:
-          AWS_REGION: ${{ env.AWS_REGION }}
-          TF_BUCKET:  ${{ env.TF_STATE_BUCKET }}
-          TF_TABLE:   ${{ env.TF_STATE_TABLE }}
+      - name: Build, tag, and push image to ECR
         run: |
-          terraform init \
-            -backend-config="bucket=$TF_BUCKET" \
-            -backend-config="key=cicd-final/terraform.tfstate" \
-            -backend-config="region=$AWS_REGION" \
-            -backend-config="dynamodb_table=$TF_TABLE"
+          IMAGE_URI=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          docker build -t $IMAGE_URI ./backend
+          docker push $IMAGE_URI
 
-      - name: Terraform apply
-        working-directory: infra/terraform
-        env:
-          TF_VAR_aws_region:     ${{ env.AWS_REGION }}
-          TF_VAR_project_name:   cicd-final
-          TF_VAR_image_tag:      ${{ env.IMAGE_TAG }}
-          TF_VAR_backend_image:  ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_BACKEND }}:${{ env.IMAGE_TAG }}
-          TF_VAR_frontend_image: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_FRONTEND }}:${{ env.IMAGE_TAG }}
-          TF_VAR_db_password:    ${{ secrets.DB_PASSWORD }}
-        run: terraform apply -auto-approve
+      - name: Update ECS service
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --force-new-deployment

@@ -1,0 +1,53 @@
+#!/bin/bash
+set -euxo pipefail
+
+ECR_REPO_URL="${ecr_repo_url}"
+IMAGE_TAG="${image_tag}"
+APP_PORT="${app_port}"
+REGION="${aws_region}"
+CONTAINER_NAME="app"
+
+# Install Docker and AWS CLI
+dnf update -y
+dnf install -y docker awscli
+systemctl enable docker
+systemctl start docker
+
+# Login to ECR
+aws ecr get-login-password --region "$REGION" \
+  | docker login --username AWS --password-stdin "$(echo "$ECR_REPO_URL" | cut -d'/' -f1)"
+
+
+
+# Pull images
+docker pull mysql:8.0
+docker pull "$ECR_REPO_URL-backend:$IMAGE_TAG"
+docker pull "$ECR_REPO_URL-frontend:$IMAGE_TAG"
+
+# Run MySQL container
+docker run -d --name db \
+  -e MYSQL_ROOT_PASSWORD=Secret123! \
+  -e MYSQL_DATABASE=appdb \
+  -e MYSQL_USER=appuser \
+  -e MYSQL_PASSWORD=Secret123! \
+  -p 3306:3306 \
+  mysql:8.0
+
+# Wait for MySQL to be ready
+until docker exec db mysqladmin ping -h "localhost" --silent; do
+  sleep 2
+done
+
+# Run backend (Node) on port 3000
+docker run -d --name backend \
+  --link db:db \
+  -e APP_PORT=3000 \
+  -e DB_HOST=db \
+  -e DB_USER=appuser \
+  -e DB_PASSWORD=Secret123! \
+  -e DB_NAME=appdb \
+  -p 3000:3000 \
+  $ECR_REPO_URL-backend:$IMAGE_TAG
+
+# Run frontend (Nginx) on port 80
+docker run -d --name frontend -p 80:80 $ECR_REPO_URL-frontend:$IMAGE_TAG
