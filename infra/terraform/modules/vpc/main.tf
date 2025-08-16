@@ -3,7 +3,7 @@ resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true
-  tags = { Name = "ec2-app-vpc" }
+  tags                 = { Name = "ec2-app-vpc" }
 }
 
 resource "aws_internet_gateway" "igw" {
@@ -16,7 +16,7 @@ resource "aws_subnet" "public_1" {
   cidr_block              = var.public_subnet_1
   map_public_ip_on_launch = var.assign_public_ip
   availability_zone       = data.aws_availability_zones.available.names[0]
-  tags = { Name = "ec2-app-public-subnet-1" }
+  tags                    = { Name = "ec2-app-public-subnet-1" }
 }
 
 resource "aws_subnet" "public_2" {
@@ -24,7 +24,7 @@ resource "aws_subnet" "public_2" {
   cidr_block              = var.public_subnet_2
   map_public_ip_on_launch = var.assign_public_ip
   availability_zone       = data.aws_availability_zones.available.names[1]
-  tags = { Name = "ec2-app-public-subnet-2" }
+  tags                    = { Name = "ec2-app-public-subnet-2" }
 }
 
 resource "aws_route_table" "public" {

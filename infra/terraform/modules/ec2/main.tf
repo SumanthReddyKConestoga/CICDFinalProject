@@ -7,5 +7,5 @@ resource "aws_instance" "app" {
   iam_instance_profile        = var.iam_instance_profile
   key_name                    = var.key_name
   user_data                   = var.user_data
-  tags = { Name = "ec2-app-instance" }
+  tags                        = { Name = "ec2-app-instance" }
 }
