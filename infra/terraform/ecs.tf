@@ -1,29 +1,14 @@
+#############################################
+# ECS (Fargate) – Cluster, Tasks, Services
+# IAM for execution role is defined in iam.tf
+#############################################
+
 resource "aws_ecs_cluster" "app" {
   name = "cicd-final-cluster"
 }
 
-# ECS task execution role with unique name to avoid collisions
-resource "aws_iam_role" "ecs_task_exec_role" {
-  name_prefix = "ecs-task-exec-"
-  force_detach_policies = true
+# ---------- Task definitions ----------
 
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = { Service = "ecs-tasks.amazonaws.com" }
-      Action   = "sts:AssumeRole"
-    }]
-  })
-}
-
-# If not present, add this:
-resource "aws_iam_role_policy_attachment" "ecs_exec_policy" {
-  role       = aws_iam_role.ecs_task_exec_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-}
-
-# Task definition for backend
 resource "aws_ecs_task_definition" "backend" {
   family                   = "cicd-backend"
   network_mode             = "awsvpc"
@@ -36,13 +21,12 @@ resource "aws_ecs_task_definition" "backend" {
     {
       name         = "backend"
       image        = var.backend_ecr_repo
-      portMappings = [{ containerPort = 3000, protocol = "tcp" }]
       essential    = true
+      portMappings = [{ containerPort = 3000, protocol = "tcp" }]
     }
   ])
 }
 
-# Task definition for frontend
 resource "aws_ecs_task_definition" "frontend" {
   family                   = "cicd-frontend"
   network_mode             = "awsvpc"
@@ -55,24 +39,27 @@ resource "aws_ecs_task_definition" "frontend" {
     {
       name         = "frontend"
       image        = var.frontend_ecr_repo
-      portMappings = [{ containerPort = 80, protocol = "tcp" }]
       essential    = true
+      portMappings = [{ containerPort = 80, protocol = "tcp" }]
     }
   ])
 }
 
-# Security group for ECS tasks to allow outbound to internet and inbound from ALB
+# ---------- Security group for tasks ----------
+
 resource "aws_security_group" "ecs_tasks_sg" {
   name   = "ecs-tasks-sg"
   vpc_id = module.vpc.vpc_id
+
+  # Outbound to internet
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-  # Allow ALB -> tasks on 80 and 3000 (temporary open to public for demo)
-  # Allow ALB -> tasks on 80 and 3000 (only from ALB SG)
+
+  # Inbound from ALB only
   ingress {
     description     = "Allow HTTP from ALB"
     from_port       = 80
@@ -80,6 +67,7 @@ resource "aws_security_group" "ecs_tasks_sg" {
     protocol        = "tcp"
     security_groups = [module.security.alb_sg_id]
   }
+
   ingress {
     description     = "Allow backend port from ALB"
     from_port       = 3000
@@ -89,7 +77,8 @@ resource "aws_security_group" "ecs_tasks_sg" {
   }
 }
 
-# Backend service
+# ---------- Services ----------
+
 resource "aws_ecs_service" "backend" {
   name            = "cicd-backend-svc"
   cluster         = aws_ecs_cluster.app.id
@@ -108,10 +97,11 @@ resource "aws_ecs_service" "backend" {
     container_name   = "backend"
     container_port   = 3000
   }
+
+  # Ensure exec policy is attached before service create
   depends_on = [aws_iam_role_policy_attachment.ecs_task_exec_attach]
 }
 
-# Frontend service
 resource "aws_ecs_service" "frontend" {
   name            = "cicd-frontend-svc"
   cluster         = aws_ecs_cluster.app.id
@@ -130,5 +120,6 @@ resource "aws_ecs_service" "frontend" {
     container_name   = "frontend"
     container_port   = 80
   }
+
   depends_on = [aws_iam_role_policy_attachment.ecs_task_exec_attach]
 }

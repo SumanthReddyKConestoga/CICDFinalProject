@@ -9,7 +9,6 @@ data "aws_iam_policy_document" "ec2_assume" {
   statement {
     effect  = "Allow"
     actions = ["sts:AssumeRole"]
-
     principals {
       type        = "Service"
       identifiers = ["ec2.amazonaws.com"]
@@ -17,19 +16,17 @@ data "aws_iam_policy_document" "ec2_assume" {
   }
 }
 
-# EC2 role (unique name each apply due to prefix)
+# EC2 role (unique name due to prefix)
 resource "aws_iam_role" "ec2_role" {
   name_prefix           = "ec2-app-role-"
   assume_role_policy    = data.aws_iam_policy_document.ec2_assume.json
   force_detach_policies = true
 
-  # Safer replacements on re-apply
   lifecycle {
     create_before_destroy = true
   }
 }
 
-# Instance profile that EC2 will use
 resource "aws_iam_instance_profile" "ec2_profile" {
   name_prefix = "ec2-app-profile-"
   role        = aws_iam_role.ec2_role.name
@@ -39,20 +36,19 @@ resource "aws_iam_instance_profile" "ec2_profile" {
   }
 }
 
-# Managed policy: pull images from ECR
 resource "aws_iam_role_policy_attachment" "ecr_readonly" {
   role       = aws_iam_role.ec2_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-# Managed policy: SSM (Session Manager, inventory, etc.)
 resource "aws_iam_role_policy_attachment" "ssm_managed" {
   role       = aws_iam_role.ec2_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
+
 #############################################
 # ECS task execution role (for Fargate/EC2)
-# Matches ecs.tf: depends_on = [aws_iam_role_policy_attachment.ecs_task_exec_attach]
+# Matches ecs.tf depends_on = [aws_iam_role_policy_attachment.ecs_task_exec_attach]
 #############################################
 
 # Trust policy for ECS tasks
@@ -81,6 +77,5 @@ resource "aws_iam_role" "ecs_task_exec_role" {
 # EXACT name expected by ecs.tf depends_on
 resource "aws_iam_role_policy_attachment" "ecs_task_exec_attach" {
   role       = aws_iam_role.ecs_task_exec_role.name
-  # AWS managed policy covers ECR pull, CloudWatch Logs, etc.
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
