@@ -1,3 +1,8 @@
+variable "app_name" {
+  description = "Name of the application"
+  type        = string
+  default     = "cicd-final-app"
+}
 variable "public_key_path" {
   type        = string
   description = "Path to your public SSH key file. Place your public key (e.g., id_rsa.pub) in infra/terraform and set this to 'id_rsa.pub'."
