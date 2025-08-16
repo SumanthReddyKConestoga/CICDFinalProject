@@ -54,9 +54,6 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-          with:
-            registry-type: public
-            region: ${{ secrets.AWS_REGION }}
       - name: Build and push backend Docker image
         run: |
           docker build -t ${{ secrets.ECR_REPO_URL }}:latest ./backend
