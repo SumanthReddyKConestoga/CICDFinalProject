@@ -48,8 +48,8 @@ jobs:
           aws ecr describe-repositories --region ${{ secrets.AWS_REGION }} || echo "ECR repo not found, will create."
       - name: Create backend ECR repository if not exists
         env:
-          BACKEND_ECR_REPO: ${{ secrets.ECR_REPOSITORY_BACKEND }}
-          BACKEND_ECR_URL: ${{ secrets.ECR_REPO_URL }}
+          BACKEND_ECR_REPO: ${{ secrets.ECR_REPO_BACKEND }}
+          BACKEND_ECR_URL: ${{ secrets.ECR_REPO_BACKEND }}
         run: |
           # Determine backend repo name: prefer explicit secret, else parse from ECR URL
           REPO_NAME="$BACKEND_ECR_REPO"
@@ -61,22 +61,14 @@ jobs:
           else
             aws ecr describe-repositories --repository-names "$REPO_NAME" --region ${{ secrets.AWS_REGION }} || aws ecr create-repository --repository-name "$REPO_NAME" --region ${{ secrets.AWS_REGION }}
           fi
-      - name: Verify AWS credentials and region
-        run: |
-          aws sts get-caller-identity
-          aws ecr describe-repositories --region ${{ secrets.AWS_REGION }} || echo "ECR repo not found, will create."
-      - name: Create ECR repository if not exists
-        run: |
-          aws ecr describe-repositories --repository-names ${{ env.ECR_REPOSITORY }} --region ${{ secrets.AWS_REGION }} || aws ecr create-repository --repository-name ${{ env.ECR_REPOSITORY }} --region ${{ secrets.AWS_REGION }}
-        env:
-          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
+      
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
       - name: Build and push backend Docker image
         run: |
-          docker build -t ${{ secrets.ECR_REPO_URL }}:latest ./backend
-          docker push ${{ secrets.ECR_REPO_URL }}:latest
+          docker build -t ${{ secrets.ECR_REPO_BACKEND }}:latest ./backend
+          docker push ${{ secrets.ECR_REPO_BACKEND }}:latest
 
   push-frontend:
     runs-on: ubuntu-latest
@@ -95,8 +87,8 @@ jobs:
           aws ecr describe-repositories --region ${{ secrets.AWS_REGION }} || echo "ECR repo not found, will create."
       - name: Create frontend ECR repository if not exists
         env:
-          FRONTEND_ECR_REPO: ${{ secrets.ECR_REPOSITORY_FRONTEND }}
-          FRONTEND_ECR_URL: ${{ secrets.ECR_REPO_URL_FRONTEND }}
+          FRONTEND_ECR_REPO: ${{ secrets.ECR_REPO_FRONTEND }}
+          FRONTEND_ECR_URL: ${{ secrets.ECR_REPO_FRONTEND }}
         run: |
           # Determine frontend repo name: prefer explicit secret, else parse from ECR URL
           REPO_NAME="$FRONTEND_ECR_REPO"
@@ -113,8 +105,8 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
       - name: Build and push frontend Docker image
         run: |
-          docker build -t ${{ secrets.ECR_REPO_URL_FRONTEND }}:latest ./frontend
-          docker push ${{ secrets.ECR_REPO_URL_FRONTEND }}:latest
+          docker build -t ${{ secrets.ECR_REPO_FRONTEND }}:latest ./frontend
+          docker push ${{ secrets.ECR_REPO_FRONTEND }}:latest
 
   terraform-validate:
     runs-on: ubuntu-latest
