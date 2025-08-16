@@ -1,17 +1,17 @@
-variable "app_name" {
-  description = "Name of the application"
-  type        = string
-  default     = "cicd-final-app"
-}
 variable "public_key_path" {
   type        = string
   description = "Path to your public SSH key file. Place your public key (e.g., id_rsa.pub) in infra/terraform and set this to 'id_rsa.pub'."
   default     = "id_rsa.pub"
 }
-variable "app_name" {
-  type        = string
-  description = "Name of the application for resource naming"
-  default     = "cicd-final"
+# variable "app_name" removed — it caused duplicate-declaration errors in CI when Terraform
+# loaded multiple files. If you need a project name for external scripts, set it in GitHub
+# Actions env or add a uniquely-named variable here (e.g., project_name) and reference it
+# from root-only Terraform code.
+variable "backend_ecr_repo" {
+  type = string
+}
+variable "frontend_ecr_repo" {
+  type = string
 }
 variable "aws_region" {
   type    = string
