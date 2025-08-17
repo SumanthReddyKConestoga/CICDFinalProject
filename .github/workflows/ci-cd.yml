@@ -1,4 +1,4 @@
-name: CI/CD Pipeline (Backend & Frontend → ECR → Terraform/EC2)
+name: CI/CD (App → ECR → Terraform/EC2)
 
 on:
   push:
@@ -9,7 +9,16 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  id-token: write
   contents: read
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  BACKEND_REPO: cicd-final-backend
+  FRONTEND_REPO: cicd-final-frontend
+  IMAGE_TAG: latest
 
 jobs:
   test-backend:
@@ -23,14 +32,10 @@ jobs:
         run: |
           cd backend
           npm ci
-      - name: Run backend tests
+      - name: Run backend tests (with coverage)
         run: |
           cd backend
-          npm test
-      - name: Run backend coverage
-        run: |
-          cd backend
-          npm run test:coverage
+          npm test -- --coverage
       - name: Upload backend coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -40,95 +45,126 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     needs: test-backend
+    outputs:
+      backend_image: ${{ steps.push_backend.outputs.image }}
+      frontend_image: ${{ steps.push_frontend.outputs.image }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region:            ${{ env.AWS_REGION }}
+
       - name: Login to Amazon ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
+
       - name: Ensure ECR repositories exist
-        env:
-          REGION: ${{ secrets.AWS_REGION }}
-          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          for REPO in cicd-final-backend cicd-final-frontend; do
-            aws ecr describe-repositories --repository-names "$REPO" --region "$REGION" >/dev/null 2>&1 \
-              || aws ecr create-repository --repository-name "$REPO" --region "$REGION" >/dev/null
+          for REPO in "${BACKEND_REPO}" "${FRONTEND_REPO}"; do
+            aws ecr describe-repositories --repository-names "$REPO" --region "$AWS_REGION" >/dev/null 2>&1 \
+              || aws ecr create-repository --repository-name "$REPO" --region "$AWS_REGION" >/dev/null
           done
-      - name: Build & push backend
-        env:
-          REGION: ${{ secrets.AWS_REGION }}
-          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+
+      - name: Build & push BACKEND
+        id: push_backend
         run: |
           set -euxo pipefail
-          BACKEND_URI="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/cicd-final-backend:latest"
-          docker build -t "$BACKEND_URI" ./backend
-          docker push "$BACKEND_URI"
-          echo "BACKEND_IMAGE_URI=${BACKEND_URI%:*}" >> $GITHUB_ENV
-      - name: Build & push frontend
-        env:
-          REGION: ${{ secrets.AWS_REGION }}
-          ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          BACKEND_URI="${ECR_REGISTRY}/${BACKEND_REPO}:${IMAGE_TAG}"
+          docker build -t "${BACKEND_URI}" ./backend
+          docker push "${BACKEND_URI}"
+          echo "image=${BACKEND_URI}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push FRONTEND
+        id: push_frontend
         run: |
           set -euxo pipefail
-          FRONTEND_URI="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/cicd-final-frontend:latest"
-          docker build -t "$FRONTEND_URI" ./frontend
-          docker push "$FRONTEND_URI"
-          echo "FRONTEND_IMAGE_URI=${FRONTEND_URI%:*}" >> $GITHUB_ENV
+          FRONTEND_URI="${ECR_REGISTRY}/${FRONTEND_REPO}:${IMAGE_TAG}"
+          docker build -t "${FRONTEND_URI}" ./frontend
+          docker push "${FRONTEND_URI}"
+          echo "image=${FRONTEND_URI}" >> "$GITHUB_OUTPUT"
 
   terraform-validate:
     runs-on: ubuntu-latest
     needs: build-and-push
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
-      - name: Export env
-        run: echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> $GITHUB_ENV
-      - name: Terraform fmt (auto-fix)
+
+      - name: Configure AWS credentials (for plan/validate)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Sanity – who am I
+        run: aws sts get-caller-identity
+
+      - name: Terraform fmt (check)
         run: |
           cd infra/terraform
-          terraform fmt -recursive
+          terraform fmt -check -recursive
+
       - name: Terraform validate
         run: |
           cd infra/terraform
           terraform init -backend=false -input=false
           terraform validate
+
       - name: Terraform plan
+        env:
+          # If your TF expects different var names, change these flags accordingly.
+          TF_VAR_aws_region: ${{ env.AWS_REGION }}
         run: |
           cd infra/terraform
           terraform init -input=false
-          terraform plan -no-color -input=false
+          terraform plan -no-color -input=false \
+            -var "repo_name=${{ env.BACKEND_REPO }}" \
+            -var "image_tag=${{ env.IMAGE_TAG }}" \
+            -var "aws_region=${{ env.AWS_REGION }}"
 
   deploy-ec2:
     runs-on: ubuntu-latest
     needs: terraform-validate
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_wrapper: false
-      - name: Configure AWS credentials
+
+      - name: Configure AWS credentials (for apply)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region:            ${{ env.AWS_REGION }}
+
       - name: Terraform apply
         env:
-          TF_VAR_backend_ecr_repo: ${{ env.BACKEND_IMAGE_URI }}
-          TF_VAR_frontend_ecr_repo: ${{ env.FRONTEND_IMAGE_URI }}
-          TF_VAR_image_tag: latest
+          TF_VAR_aws_region: ${{ env.AWS_REGION }}
         run: |
+          set -euxo pipefail
           cd infra/terraform
-          terraform init
-          terraform apply -auto-approve
+          terraform init -input=false
+          terraform apply -auto-approve \
+            -var "repo_name=${{ env.BACKEND_REPO }}" \
+            -var "image_tag=${{ env.IMAGE_TAG }}" \
+            -var "aws_region=${{ env.AWS_REGION }}"
+          echo "APP_URL=$(terraform output -raw app_url || true)" >> $GITHUB_ENV
+          echo "PUBLIC_IP=$(terraform output -raw public_ip || true)" >> $GITHUB_ENV
+
+      - name: Show outputs
+        run: |
+          echo "App URL:  $APP_URL"
+          echo "Public IP: $PUBLIC_IP"
