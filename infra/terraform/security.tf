@@ -1,15 +1,8 @@
-resource "aws_security_group" "alb_sg" {
-  name        = "ec2-app-alb-sg"
-  description = "Allow HTTP to ALB"
+# Single SG: allow HTTP on app_port from anywhere + SSH from your IP
+resource "aws_security_group" "app_sg" {
+  name        = "ec2-app-sg"
+  description = "Allow HTTP and SSH"
   vpc_id      = aws_vpc.main.id
-
-  ingress {
-    description = "HTTP"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
 
   egress {
     from_port   = 0
@@ -18,34 +11,19 @@ resource "aws_security_group" "alb_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = { Name = "ec2-app-alb-sg" }
-}
-
-resource "aws_security_group" "app_sg" {
-  name        = "ec2-app-sg"
-  description = "Allow ALB and SSH to EC2"
-  vpc_id      = aws_vpc.main.id
-
   ingress {
-    description     = "App port from ALB"
-    from_port       = 80
-    to_port         = 80
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb_sg.id]
-  }
-
-  ingress {
-    description = "SSH"
+    description = "SSH from your IP"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = [var.ssh_cidr]
   }
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+  ingress {
+    description = "HTTP (app)"
+    from_port   = var.app_port
+    to_port     = var.app_port
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 

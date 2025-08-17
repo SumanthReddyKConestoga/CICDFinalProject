@@ -37,11 +37,6 @@ resource "aws_route" "default_inet" {
   route_table_id         = aws_route_table.public.id
   destination_cidr_block = "0.0.0.0/0"
   gateway_id             = aws_internet_gateway.igw.id
-  lifecycle {
-    create_before_destroy = true
-    ignore_changes        = [destination_cidr_block]
-    prevent_destroy       = true
-  }
 }
 
 resource "aws_route_table_association" "public_assoc_1" {
